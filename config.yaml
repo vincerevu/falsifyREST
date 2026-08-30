@@ -1,0 +1,4 @@
+runs: 100
+budget: 5
+seed: 7
+belief_threshold: 0.8

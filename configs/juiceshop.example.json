@@ -1,0 +1,17 @@
+{
+  "target": {
+    "base_url": "http://localhost:3001",
+    "openapi": "D:/Research/benchmarks/2026-08-27/juice-shop-openapi-full.json"
+  },
+  "evomaster": {
+    "jar": "D:/Research/tools/evomaster/evomaster.jar",
+    "max_time": "10m",
+    "output_folder": "D:/Research/falsifyREST/output/evomaster"
+  },
+  "actors": [
+    {"id": "user_a", "role": "USER", "headers": {}},
+    {"id": "user_b", "role": "USER", "headers": {}},
+    {"id": "admin", "role": "ADMIN", "headers": {}}
+  ],
+  "note": "Populate Authorization/Cookie values only at runtime or through a local ignored config; never commit credentials."
+}

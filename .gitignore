@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated EvoMaster suites are reproducible from the documented command.
+output/evomaster-*/
+output/traces/
+output/summary.json
+output/policy-toy-result.json
+
+# Local runtime credentials/configuration must never be committed.
+configs/juiceshop.local.json

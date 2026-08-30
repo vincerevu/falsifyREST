@@ -1,0 +1,45 @@
+{
+  "target": "http://localhost:3001",
+  "workflow": "basket ownership",
+  "hypothesis": {
+    "id": "ownership-1",
+    "subject_relation": "actor == resource.owner",
+    "action": "GET /rest/basket/{id}",
+    "resource_type": "basket",
+    "preconditions": [
+      "status == success"
+    ],
+    "expected": "DENY",
+    "confidence": 0.65,
+    "support": 1,
+    "violations_tested": 0
+  },
+  "counterexample": {
+    "hypothesis_id": "ownership-1",
+    "actor": "user_b",
+    "probe": {
+      "id": "counterexample-ownership-1",
+      "actor": "user_b",
+      "method": "GET",
+      "path": "/rest/basket/8",
+      "body": null,
+      "cost": 1.0,
+      "risk": 0.0
+    },
+    "resource_key": "basket:8",
+    "expected": "DENY"
+  },
+  "expected": "DENY",
+  "observed_status": 200,
+  "effect": {
+    "classification": "EFFECTIVE_DISCLOSURE",
+    "protected_effect": true,
+    "reason": "protected resource data returned"
+  },
+  "result": "COUNTEREXAMPLE",
+  "baseline_comparison": {
+    "authprobe_reported_endpoint": false,
+    "bacscan_reported_endpoint": false,
+    "note": "Comparison is against the saved 2026-08-27 reports, not a claim about all possible configurations of either tool."
+  }
+}
