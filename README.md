@@ -34,3 +34,32 @@ This end-to-end toy run creates and pays an order as `user_a`, infers `actor == 
 ## Scope
 
 The toy target models `DRAFT -> SUBMITTED -> APPROVED`. The intentional vulnerability is that a manager can approve a draft order. No LLM is used and the oracle is deterministic. The package also includes a standard-library HTTP executor/session/reset layer. The EvoMaster adapter is offline-only: it normalizes generated actions into `Probe` objects and does not modify EvoMaster.
+
+## Rule-first, state-aware pipeline
+
+`falsifyREST` is a rule-first, state-aware REST API security testing MVP. It builds semantic metadata, derives reproducible experiment templates, and uses deterministic effect/disclosure oracles for verdicts.
+
+## Pipeline
+
+1. Parse OpenAPI operations.
+2. Infer resources, actions, and candidate security concepts with deterministic rules.
+3. Generate ownership, state-transition, and replay hypotheses.
+4. Plan actor-separated experiment sequences and prioritize them transparently.
+5. Execute through the configured runner, then let effect/disclosure oracles decide `COUNTEREXAMPLE`, `POLICY_HOLDS`, or `INCONCLUSIVE`.
+6. Feed only those oracle results back into scheduling confidence.
+
+## Optional LLM semantic enrichment
+
+LLM output is deliberately limited to resource/action labels and candidate invariants. It cannot choose requests, infer an authorization verdict, or mark a vulnerability. The default is disabled, which is the baseline for rule-only experiments.
+
+```powershell
+# Default: no LLM request
+$env:FALSIFYREST_LLM_PROVIDER = "disabled"
+
+# Local Ollama (optional)
+$env:FALSIFYREST_LLM_PROVIDER = "ollama"
+$env:FALSIFYREST_LLM_MODEL = "qwen2.5:7b"
+$env:FALSIFYREST_LLM_BASE_URL = "http://localhost:11434/v1"
+```
+
+For another OpenAI-compatible server, set `FALSIFYREST_LLM_PROVIDER=openai`, `FALSIFYREST_LLM_BASE_URL`, `FALSIFYREST_LLM_MODEL`, and (when needed) `FALSIFYREST_LLM_API_KEY`. Never commit keys; the repository contains no provider credentials.

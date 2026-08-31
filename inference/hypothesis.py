@@ -12,6 +12,12 @@ class PolicyHypothesis:
     confidence: float = 0.0
     support: int = 0
     violations_tested: int = 0
+    family: str = "ownership"
+    target_operation: str | None = None
+    resource: str | None = None
+    expected_observation: str = "DENY"
+    evidence: list[str] = field(default_factory=list)
+    status: str = "UNTESTED"
 
     @property
     def required_state(self) -> str | None:
