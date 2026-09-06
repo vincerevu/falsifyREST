@@ -4,12 +4,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.models import Observation
+from evidence import Evidence
 from experiments.policy_guided_loop import prepare_experiments
 from feedback import FeedbackStore, apply_result
 from inference.rule_generator import generate_rule_hypotheses
 from planner import plan_experiments
 from schema.models import Operation
-from semantic import infer_semantics
+from semantic import enrich_from_evidence, infer_semantics
 from semantic.llm_semantic import DisabledSemanticEnricher, OpenAICompatibleSemanticEnricher
 from state import StateModel
 
@@ -69,3 +70,27 @@ def test_policy_guided_loop_defaults_to_rule_only(monkeypatch):
     result = prepare_experiments(operations())
     assert result["semantic_source"] == ["rule"]
     assert len(result["experiments"]) >= 3
+
+
+def test_structural_semantics_cover_unknown_domain_action_without_keyword_gate():
+    semantic = infer_semantics([Operation("POST", "/claims/{claimId}/settle", "settle")]).operations[0]
+    assert semantic.resource == "claim"
+    assert semantic.action == "settle"
+    assert {"ownership", "state-transition", "replay"}.issubset(semantic.candidate_policy_families)
+    assert semantic.family_sources["state-transition"] == {"rule"}
+
+
+def test_execution_evidence_enriches_semantics_and_records_provenance():
+    model = infer_semantics([Operation("POST", "/claims/{claimId}/settle", "settle")])
+    evidence = Evidence("e", "settle", "claim", "12", "user_a", "owner", "user_a", {"status": "PENDING"}, {"status": "SETTLED"}, "SUCCESS", 200)
+    semantic = enrich_from_evidence(model, [evidence]).operations[0]
+    assert "status" in semantic.state_fields
+    assert semantic.family_sources["state-transition"] == {"rule", "evidence"}
+    assert semantic.family_sources["ownership"] == {"rule", "evidence"}
+
+
+def test_llm_candidate_policy_families_are_parsed_and_tracked():
+    operation = infer_semantics([Operation("POST", "/claims/{claimId}/settle", "settle")]).operations[0]
+    OpenAICompatibleSemanticEnricher._apply(operation, {"candidate_policy_families": ["state-transition"], "possible_state_fields": ["claimState"]})
+    assert "llm" in operation.family_sources["state-transition"]
+    assert "claimState" in operation.state_fields

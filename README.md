@@ -56,6 +56,10 @@ The generic loop requires an explicit `CounterfactualContext` supplied by a targ
 
 `ERROR` evidence is excluded from belief updates. State-family predictions are recomputed from the snapshot taken after setup. Effect validation requires adapter- or hypothesis-supplied `protected_fields` (for example `{"status"}`, `{"balance"}`), rather than assuming every target uses a `status` field.
 
+## Semantic bootstrap provenance
+
+Semantic bootstrap uses structural signals (HTTP method and an existing-resource path) to create a broad candidate space; action keywords only boost confidence. Runtime evidence can then add state-transition and ownership candidates from observed effects. Each semantic family retains `family_sources` and `family_confidence`, enabling rule-only, rule+LLM, rule+evidence, and combined ablations without giving the LLM any authority over execution or verdicts.
+
 ## Optional LLM semantic enrichment
 
 LLM output is deliberately limited to resource/action labels and candidate invariants. It cannot choose requests, infer an authorization verdict, or mark a vulnerability. The default is disabled, which is the baseline for rule-only experiments.

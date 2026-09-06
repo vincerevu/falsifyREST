@@ -49,15 +49,18 @@ class OpenAICompatibleSemanticEnricher(SemanticEnricher):
         resource = str(result.get("resource", operation.resource)).lower()
         action = str(result.get("action", operation.action)).lower()
         concepts = {item for item in result.get("security_concepts", []) if item in {"ownership", "state-transition", "replay"}}
+        families = {item for item in result.get("candidate_policy_families", result.get("security_concepts", [])) if item in {"ownership", "state-transition", "replay"}}
         invariants = [str(item) for item in result.get("likely_invariants", [])][:5]
         operation.resource, operation.action = resource, action
         operation.security_concepts.update(concepts)
-        operation.candidate_policy_families.update(concepts)
+        for family in families:
+            operation.add_family(family, "llm", 0.65)
         operation.state_fields = list(dict.fromkeys([*operation.state_fields, *[str(item) for item in result.get("possible_state_fields", [])][:5]]))
         operation.relationship_fields = list(dict.fromkeys([*operation.relationship_fields, *[str(item) for item in result.get("possible_actor_relations", [])][:5]]))
         operation.likely_invariants = list(dict.fromkeys([*operation.likely_invariants, *invariants]))
         operation.confidence = max(operation.confidence, 0.65)
-        operation.source = "rule+llm"
+        if not families:
+            operation.source = "+".join(sorted({*operation.source.split("+"), "llm"}))
         return operation
 
 

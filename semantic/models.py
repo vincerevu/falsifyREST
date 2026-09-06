@@ -17,6 +17,16 @@ class SemanticOperation:
     state_fields: list[str] = field(default_factory=list)
     relationship_fields: list[str] = field(default_factory=list)
     candidate_policy_families: set[str] = field(default_factory=set)
+    family_sources: dict[str, set[str]] = field(default_factory=dict)
+    family_confidence: dict[str, float] = field(default_factory=dict)
+
+    def add_family(self, family: str, source: str, confidence: float) -> None:
+        self.candidate_policy_families.add(family)
+        self.family_sources.setdefault(family, set()).add(source)
+        self.family_confidence[family] = max(self.family_confidence.get(family, 0.0), confidence)
+        all_sources = {item for sources in self.family_sources.values() for item in sources}
+        preferred_order = {"rule": 0, "llm": 1, "evidence": 2}
+        self.source = "+".join(sorted(all_sources, key=lambda item: preferred_order.get(item, 99)))
 
 
 @dataclass
