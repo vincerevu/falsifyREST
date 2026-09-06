@@ -12,6 +12,11 @@ class SemanticOperation:
     likely_invariants: list[str] = field(default_factory=list)
     confidence: float = 0.0
     source: str = "rule"
+    actor_fields: list[str] = field(default_factory=list)
+    resource_id_fields: list[str] = field(default_factory=list)
+    state_fields: list[str] = field(default_factory=list)
+    relationship_fields: list[str] = field(default_factory=list)
+    candidate_policy_families: set[str] = field(default_factory=set)
 
 
 @dataclass

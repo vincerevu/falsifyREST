@@ -13,16 +13,14 @@ class FeedbackStore:
 
 
 def apply_result(store: FeedbackStore, hypothesis: PolicyHypothesis, result: str) -> PolicyHypothesis:
-    """Update scheduling evidence; verdict still comes from deterministic oracles."""
+    """Compatibility update for externally classified results."""
     store.attempted.add(hypothesis.id)
     store.outcomes[hypothesis.id] = result
     hypothesis.violations_tested += 1
     if result == "COUNTEREXAMPLE":
-        hypothesis.status = "CONFIRMED"
-        hypothesis.confidence = min(1.0, hypothesis.confidence + 0.2)
+        hypothesis.contradicting_evidence.append(f"oracle:{hypothesis.violations_tested}")
     elif result == "POLICY_HOLDS":
-        hypothesis.status = "REJECTED"
-        hypothesis.confidence = max(0.0, hypothesis.confidence - 0.1)
-    else:
-        hypothesis.status = "INCONCLUSIVE"
+        hypothesis.support_evidence.append(f"oracle:{hypothesis.violations_tested}")
+    hypothesis.confidence = round((len(hypothesis.support_evidence) + 1) / (len(hypothesis.support_evidence) + len(hypothesis.contradicting_evidence) + 2), 4)
+    hypothesis.status = "CONFIRMED" if result == "COUNTEREXAMPLE" else "SUPPORTED" if result == "POLICY_HOLDS" else "INCONCLUSIVE"
     return hypothesis

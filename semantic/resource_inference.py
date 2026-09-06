@@ -41,5 +41,8 @@ def infer_semantics(operations: list[Operation]) -> APISemanticModel:
         if action in REPLAY_ACTIONS and operation.method in WRITE_METHODS:
             concepts.add("replay")
             invariants.append(f"{action} should not be effective when replayed")
-        model.operations.append(SemanticOperation(operation, resource, action, concepts, invariants, 0.55, "rule"))
+        families = set(concepts)
+        model.operations.append(SemanticOperation(operation, resource, action, concepts, invariants, 0.55, "rule",
+            actor_fields=["actor.id"], resource_id_fields=[parameter.get("name", "id") for parameter in operation.parameters if parameter.get("in") == "path"],
+            state_fields=["status"] if action in STATEFUL_ACTIONS else [], relationship_fields=["owner_id"] if "ownership" in concepts else [], candidate_policy_families=families))
     return model

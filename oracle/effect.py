@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from core.models import Observation
@@ -9,18 +9,26 @@ class EffectResult:
     classification: str
     protected_effect: bool
     reason: str
+    changed_fields: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+
+
+def diff_snapshots(before: dict[str, Any], after: dict[str, Any]) -> dict[str, tuple[Any, Any]]:
+    return {key: (before.get(key), after.get(key)) for key in set(before) | set(after) if before.get(key) != after.get(key)}
 
 
 def classify_effect(before: dict[str, Any], response: Observation, after: dict[str, Any], protected_field: str = "status") -> EffectResult:
+    changes = diff_snapshots(before, after)
+    if protected_field in changes:
+        return EffectResult("EFFECTIVE_SUCCESS", True, f"{protected_field} changed", changes)
+    if response.status_code >= 500 and changes:
+        return EffectResult("EFFECTIVE_SUCCESS", True, "protected state changed despite server error", changes)
     if response.status_code >= 500:
-        return EffectResult("ERROR", False, "server error")
+        return EffectResult("ERROR", False, "server error", changes)
     if isinstance(response.response_body, dict) and response.response_body.get("error"):
-        return EffectResult("DENIED", False, "explicit error response")
-    if before.get(protected_field) != after.get(protected_field):
-        return EffectResult("EFFECTIVE_SUCCESS", True, f"{protected_field} changed")
+        return EffectResult("DENIED", False, "explicit error response", changes)
     if response.status_code in {401, 403, 404, 409}:
-        return EffectResult("DENIED", False, f"HTTP {response.status_code}")
-    return EffectResult("UNKNOWN", False, "no protected state change")
+        return EffectResult("DENIED", False, f"HTTP {response.status_code}", changes)
+    return EffectResult("NO_EFFECT", False, "no protected state change", changes)
 
 
 def classify_disclosure(response: Observation, expected_resource_id: str) -> EffectResult:

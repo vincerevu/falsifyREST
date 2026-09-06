@@ -41,7 +41,7 @@ class OpenAICompatibleSemanticEnricher(SemanticEnricher):
     def _prompt(operation: SemanticOperation) -> str:
         return json.dumps({
             "method": operation.operation.method, "path": operation.operation.path, "operation_id": operation.operation.operation_id,
-            "task": "Return resource, action, security_concepts (ownership/state-transition/replay), and likely_invariants as JSON.",
+            "task": "Return resource, action, possible_state_fields, possible_actor_relations, candidate_policy_families (ownership/state-transition/replay), and likely_invariants as JSON. These are candidates, not policy verdicts.",
         })
 
     @staticmethod
@@ -52,6 +52,9 @@ class OpenAICompatibleSemanticEnricher(SemanticEnricher):
         invariants = [str(item) for item in result.get("likely_invariants", [])][:5]
         operation.resource, operation.action = resource, action
         operation.security_concepts.update(concepts)
+        operation.candidate_policy_families.update(concepts)
+        operation.state_fields = list(dict.fromkeys([*operation.state_fields, *[str(item) for item in result.get("possible_state_fields", [])][:5]]))
+        operation.relationship_fields = list(dict.fromkeys([*operation.relationship_fields, *[str(item) for item in result.get("possible_actor_relations", [])][:5]]))
         operation.likely_invariants = list(dict.fromkeys([*operation.likely_invariants, *invariants]))
         operation.confidence = max(operation.confidence, 0.65)
         operation.source = "rule+llm"

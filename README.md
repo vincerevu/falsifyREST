@@ -25,7 +25,7 @@ python -m experiments.policy_runner
 
 This end-to-end toy run creates and pays an order as `user_a`, infers `actor == resource.owner` for refund from a successful trace, then has `user_b` refund the same paid order. The target intentionally permits this; the effect oracle verifies `PAID -> REFUNDED` and records `COUNTEREXAMPLE` in `output/policy-toy-result.json`.
 
-`schema/`, `actors/`, `execution/trace_store.py`, `resources/`, `inference/`, `violation/`, and `oracle/` provide the MVP modules. `adapters/EvoMasterProvider` launches EvoMaster in black-box mode; `ProxyTraceImporter` reads normalized JSONL captured between EvoMaster and a target. It intentionally does not parse generated EvoMaster source tests.
+`schema/`, `actors/`, `execution/trace_store.py`, `resources/`, `evidence/`, `inference/`, `violation/`, and `oracle/` provide the MVP modules. `adapters/EvoMasterProvider` launches EvoMaster in black-box mode and returns an `ExplorationResult`; when a proxy JSONL is supplied it includes normalized traces through `ProxyTraceImporter`. It intentionally does not parse generated EvoMaster source tests.
 
 ## Juice Shop handoff
 
@@ -41,12 +41,14 @@ The toy target models `DRAFT -> SUBMITTED -> APPROVED`. The intentional vulnerab
 
 ## Pipeline
 
-1. Parse OpenAPI operations.
-2. Infer resources, actions, and candidate security concepts with deterministic rules.
-3. Generate ownership, state-transition, and replay hypotheses.
-4. Plan actor-separated experiment sequences and prioritize them transparently.
-5. Execute through the configured runner, then let effect/disclosure oracles decide `COUNTEREXAMPLE`, `POLICY_HOLDS`, or `INCONCLUSIVE`.
-6. Feed only those oracle results back into scheduling confidence.
+1. Parse OpenAPI operations and produce semantic bootstrap candidates; these are not policies.
+2. Import real HTTP traces and normalize them into an `EvidenceStore`.
+3. Keep competing typed-predicate hypotheses (ownership, authenticated access, state transition, replay) and induce support/contradiction from evidence.
+4. Generate a minimal counterfactual that changes one condition at a time, then select by prediction disagreement, impact, and cost.
+5. Compile concrete probe steps, execute them, and compare black-box snapshots before/after.
+6. Update hypothesis support or contradiction from the deterministic effect oracle, then iterate while budget remains.
+
+`experiments.active_loop.ActivePolicyEngine` is the generic loop. The Juice Shop runner remains a target-specific benchmark adapter, not part of the core engine.
 
 ## Optional LLM semantic enrichment
 

@@ -1,7 +1,16 @@
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from .base import SequenceProvider
+from .proxy import ProxyTraceImporter
+
+
+@dataclass
+class ExplorationResult:
+    traces: list
+    output_folder: Path
+    stdout: str = ""
 
 
 class EvoMasterProvider(SequenceProvider):
@@ -18,6 +27,8 @@ class EvoMasterProvider(SequenceProvider):
             "--base", self.base_url, "--maxTime", self.max_time, "--outputFolder", str(self.output_folder),
         ], check=True, capture_output=True, text=True)
 
-    def generate_sequences(self, target_operations=None):
-        self.run()
-        raise RuntimeError("Import proxy JSONL with ProxyTraceImporter; parsing generated source tests is intentionally out of scope for the MVP")
+    def generate_sequences(self, target_operations=None, trace_path: str | Path | None = None):
+        result = self.run()
+        if trace_path is None:
+            return ExplorationResult([], self.output_folder, result.stdout)
+        return ExplorationResult(ProxyTraceImporter().load(trace_path), self.output_folder, result.stdout)

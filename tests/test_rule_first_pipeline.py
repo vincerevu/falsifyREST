@@ -25,9 +25,9 @@ def operations():
 def test_rule_semantics_cover_ownership_state_and_replay_without_llm():
     model = infer_semantics(operations())
     hypotheses = generate_rule_hypotheses(model)
-    assert {item.family for item in hypotheses} == {"ownership", "state-transition", "replay"}
+    assert {"ownership", "state-transition", "replay"}.issubset({item.family for item in hypotheses})
     assert all(item.target_operation for item in hypotheses)
-    assert all(item.confidence == 0.55 for item in hypotheses)
+    assert all(item.confidence == 0.5 for item in hypotheses)
 
 
 def test_semantic_enrichment_is_bounded_metadata_only():

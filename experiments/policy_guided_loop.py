@@ -2,8 +2,8 @@
 from dataclasses import asdict
 
 from feedback import FeedbackStore
+from inference.candidate_generator import generate_candidates
 from inference.ranker import priority_score
-from inference.rule_generator import generate_rule_hypotheses
 from planner import plan_experiments
 from schema.models import Operation
 from semantic import enricher_from_env, infer_semantics
@@ -14,7 +14,7 @@ def prepare_experiments(operations: list[Operation], limit: int | None = None) -
     model = infer_semantics(operations)
     enricher = enricher_from_env()
     model.operations = [enricher.enrich(operation) for operation in model.operations]
-    hypotheses = generate_rule_hypotheses(model)
+    hypotheses = generate_candidates(model)
     feedback = FeedbackStore()
     experiments = plan_experiments(hypotheses, limit)
     return {
