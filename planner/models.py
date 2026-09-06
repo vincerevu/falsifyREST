@@ -18,6 +18,7 @@ class ExecutableStep:
     path_bindings: dict[str, str] = field(default_factory=dict)
     body_bindings: dict[str, Any] = field(default_factory=dict)
     purpose: str = ""
+    probe: object | None = None
 
 
 @dataclass

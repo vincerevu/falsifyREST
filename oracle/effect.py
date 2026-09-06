@@ -20,8 +20,6 @@ def classify_effect(before: dict[str, Any], response: Observation, after: dict[s
     changes = diff_snapshots(before, after)
     if protected_field in changes:
         return EffectResult("EFFECTIVE_SUCCESS", True, f"{protected_field} changed", changes)
-    if response.status_code >= 500 and changes:
-        return EffectResult("EFFECTIVE_SUCCESS", True, "protected state changed despite server error", changes)
     if response.status_code >= 500:
         return EffectResult("ERROR", False, "server error", changes)
     if isinstance(response.response_body, dict) and response.response_body.get("error"):

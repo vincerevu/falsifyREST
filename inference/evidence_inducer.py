@@ -8,4 +8,4 @@ from semantic.models import APISemanticModel
 
 def induce_policy_hypotheses(model: APISemanticModel, evidence: list[Evidence]) -> list[PolicyHypothesis]:
     """Public inference entry point: semantics proposes space, executions determine support."""
-    return update_from_evidence(generate_candidates(model), evidence)
+    return update_from_evidence(generate_candidates(model, evidence), evidence)
