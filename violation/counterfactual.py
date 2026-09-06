@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 from core.models import Probe
+from evidence.context import EvaluationContext
 from inference.hypothesis import PolicyHypothesis
 
 
@@ -49,8 +50,10 @@ class CounterfactualGenerator:
                 raise ValueError("state counterfactual requires explicit setup probes for the alternative state")
             intervention = Probe(f"cf-{hypothesis.id}", baseline.actor, baseline.method, baseline.path, baseline.body, baseline.cost, baseline.risk)
             condition, setup = "state precondition", list(context.state_setup_probes)
-        values = {"actor": {"id": intervention.actor, "authenticated": intervention.actor != context.anonymous_actor},
-                  "resource": {"owner_id": context.owner_id}, "state": dict(context.state), "history": dict(context.history)}
+        values = EvaluationContext(
+            actor={"id": intervention.actor, "authenticated": intervention.actor != context.anonymous_actor},
+            resource={"owner_id": context.owner_id}, state=dict(context.state), history=dict(context.history),
+        ).as_dict()
         if hypothesis.family == "replay":
             values["history"][hypothesis.target_operation or hypothesis.action] = True
         return CounterfactualExperiment(hypothesis.id, hypothesis.family, baseline, intervention, condition, setup, list(context.observation_probes), values)

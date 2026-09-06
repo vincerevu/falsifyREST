@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.models import Observation, Probe
-from evidence import Evidence, EvidenceStore
+from evidence import Evidence, EvidenceStore, context_from_evidence
 from experiments.active_loop import ActivePolicyEngine
 from experiments.generator import generate_counterfactuals
 from experiments.selector import select
@@ -18,8 +18,12 @@ from violation.counterfactual import CounterfactualContext
 
 def test_evidence_induction_keeps_competing_hypotheses_and_updates_support():
     model = infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")])
-    evidence = Evidence("e1", "POST /orders/{id}/refund", "order", "1", "user_a", "owner", {"status": "PAID"}, {"status": "REFUNDED"}, "SUCCESS", 200,
-                        response_features={"owner": "user_a"})
+    evidence = Evidence(
+        id="e1", operation_id="POST /orders/{id}/refund", resource_type="order", resource_id="1", actor_id="user_a",
+        actor_relation="owner", resource_owner_id=None, pre_state={"status": "PAID"}, post_state={"status": "REFUNDED"},
+        outcome="SUCCESS", status_code=200,
+    )
+    assert context_from_evidence(evidence).resource["owner_id"] == "user_a"
     hypotheses = induce_policy_hypotheses(model, [evidence])
     assert len(hypotheses) >= 3
     assert any(item.support_evidence for item in hypotheses)
@@ -59,6 +63,22 @@ def test_active_engine_updates_belief_from_execution_evidence():
     outcomes = engine.run(Probe("refund", "user_a", "POST", "/orders/1/refund"), CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "PAID"}), 1, execute, lambda: dict(state))
     assert outcomes[0].result == "COUNTEREXAMPLE"
     assert engine.evidence.all()
+
+
+def test_active_engine_does_not_repeat_a_counterfactual_with_larger_budget():
+    hypotheses = induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [])
+    state = {"status": "PAID"}
+    executions = []
+
+    def execute(probe):
+        executions.append(probe.id)
+        state["status"] = "REFUNDED"
+        return Observation(200, {}, {}, probe.actor, probe.method, probe.path, features={"operation_id": "POST /orders/{id}/refund"})
+
+    engine = ActivePolicyEngine(hypotheses)
+    outcomes = engine.run(Probe("refund", "user_a", "POST", "/orders/1/refund"), CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "PAID"}), 10, execute, lambda: dict(state))
+    assert len(outcomes) == len({outcome.candidate_id for outcome in outcomes})
+    assert len(outcomes) < 10
 
 
 def test_replay_and_state_counterfactuals_require_real_setup_context():

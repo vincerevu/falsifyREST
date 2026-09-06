@@ -14,6 +14,11 @@ class ExperimentCandidate:
     def id(self) -> str:
         return self.counterfactual.hypothesis_id
 
+    @property
+    def fingerprint(self) -> str:
+        probe = self.counterfactual.intervention
+        return "|".join([self.counterfactual.family, probe.actor, probe.method, probe.path, self.counterfactual.mutated_condition])
+
 
 @dataclass(frozen=True)
 class ExperimentOutcome:

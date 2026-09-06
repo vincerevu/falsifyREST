@@ -21,15 +21,17 @@ class ActivePolicyEngine:
         self.hypotheses = hypotheses
         self.evidence = evidence or EvidenceStore()
         self.tracker = tracker
+        self.attempted: set[str] = set()
 
     def run(self, baseline: Probe, context: CounterfactualContext, budget: int,
             execute: Callable[[Probe], Observation], snapshot: Callable[[], dict], resource_type: str = "resource") -> list[ExperimentOutcome]:
         outcomes: list[ExperimentOutcome] = []
         for _ in range(budget):
             candidates = generate_counterfactuals(self.hypotheses, baseline, context)
+            candidates = [candidate for candidate in candidates if candidate.fingerprint not in self.attempted]
             if not candidates:
                 break
-            candidate = select(candidates, len(self.hypotheses))
+            candidate = select(candidates, len(self.hypotheses), self.attempted)
             hypothesis = next(item for item in self.hypotheses if item.id == candidate.id)
             plan = compile_counterfactual(candidate.counterfactual, hypothesis)
             for step in plan.setup_steps:
@@ -47,8 +49,9 @@ class ActivePolicyEngine:
             prediction = candidate.predictions.get(hypothesis.id, "DENY")
             result = compare_prediction(prediction, effect)
             observed = replace(observed, state_before=dict(before), state_after=dict(after))
-            evidence = extract_evidence(observed, self.tracker, source_trace="active")
+            evidence = extract_evidence(observed, self.tracker, source_trace="active", evaluation_context=candidate.counterfactual.context)
             self.evidence.add(evidence)
             update_from_evidence(self.hypotheses, self.evidence.all())
+            self.attempted.add(candidate.fingerprint)
             outcomes.append(ExperimentOutcome(candidate.id, "ALLOW" if effect.protected_effect else "DENY", result, evidence.id))
         return outcomes

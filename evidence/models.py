@@ -23,10 +23,12 @@ class Evidence:
     resource_id: str | None
     actor_id: str
     actor_relation: str | None
+    resource_owner_id: str | None
     pre_state: dict[str, Any]
     post_state: dict[str, Any]
     outcome: str
     status_code: int
     request_features: dict[str, Any] = field(default_factory=dict)
     response_features: dict[str, Any] = field(default_factory=dict)
+    history: dict[str, bool] = field(default_factory=dict)
     source_trace: str = "trace"

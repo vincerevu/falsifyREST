@@ -52,6 +52,8 @@ The toy target models `DRAFT -> SUBMITTED -> APPROVED`. The intentional vulnerab
 
 The generic loop requires an explicit `CounterfactualContext` supplied by a target adapter: known owner/alternate identities, observed state, optional state-setup probes, and optional observation probes. It will not silently pretend a copied request changes state. Replay executes the accepted baseline once before repeating it; state-family candidates are skipped until a concrete alternative-state setup is available.
 
+`EvaluationContext` is shared by counterfactual selection and evidence induction (`actor`, `resource`, `state`, `history`). The selector records an experiment fingerprint after execution, so an unchanged experiment cannot consume the remaining budget repeatedly.
+
 ## Optional LLM semantic enrichment
 
 LLM output is deliberately limited to resource/action labels and candidate invariants. It cannot choose requests, infer an authorization verdict, or mark a vulnerability. The default is disabled, which is the baseline for rule-only experiments.
