@@ -41,26 +41,21 @@ class OpenAICompatibleSemanticEnricher(SemanticEnricher):
     def _prompt(operation: SemanticOperation) -> str:
         return json.dumps({
             "method": operation.operation.method, "path": operation.operation.path, "operation_id": operation.operation.operation_id,
-            "task": "Return resource, action, possible_state_fields, possible_actor_relations, candidate_policy_families (ownership/state-transition/replay), and likely_invariants as JSON. These are candidates, not policy verdicts.",
+            "task": "Return resource, action, possible_state_fields, possible_actor_relations, and family_priors (ownership/state-transition/replay values 0..1) as JSON. Priors are not policy verdicts.",
         })
 
     @staticmethod
     def _apply(operation: SemanticOperation, result: dict) -> SemanticOperation:
         resource = str(result.get("resource", operation.resource)).lower()
         action = str(result.get("action", operation.action)).lower()
-        concepts = {item for item in result.get("security_concepts", []) if item in {"ownership", "state-transition", "replay"}}
-        families = {item for item in result.get("candidate_policy_families", result.get("security_concepts", [])) if item in {"ownership", "state-transition", "replay"}}
-        invariants = [str(item) for item in result.get("likely_invariants", [])][:5]
+        priors = {family: value for family, value in result.get("family_priors", {}).items() if family in {"ownership", "state-transition", "replay"} and isinstance(value, (int, float))}
         operation.resource, operation.action = resource, action
-        operation.security_concepts.update(concepts)
-        for family in families:
-            operation.add_family(family, "llm", 0.65)
+        for family, value in priors.items():
+            operation.set_family_prior(family, value, "llm")
         operation.state_fields = list(dict.fromkeys([*operation.state_fields, *[str(item) for item in result.get("possible_state_fields", [])][:5]]))
         operation.relationship_fields = list(dict.fromkeys([*operation.relationship_fields, *[str(item) for item in result.get("possible_actor_relations", [])][:5]]))
-        operation.likely_invariants = list(dict.fromkeys([*operation.likely_invariants, *invariants]))
-        operation.confidence = max(operation.confidence, 0.65)
-        if not families:
-            operation.source = "+".join(sorted({*operation.source.split("+"), "llm"}))
+        if not priors:
+            operation.prior_source = "llm"
         return operation
 
 

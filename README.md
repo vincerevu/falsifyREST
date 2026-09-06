@@ -56,9 +56,9 @@ The generic loop requires an explicit `CounterfactualContext` supplied by a targ
 
 `ERROR` evidence is excluded from belief updates. State-family predictions are recomputed from the snapshot taken after setup. Effect validation requires adapter- or hypothesis-supplied `protected_fields` (for example `{"status"}`, `{"balance"}`), rather than assuming every target uses a `status` field.
 
-## Semantic bootstrap provenance
+## Semantic prior
 
-Semantic bootstrap uses structural signals (HTTP method and an existing-resource path) to create a broad candidate space; action keywords only boost confidence. Runtime evidence can then add state-transition and ownership candidates from observed effects. Each semantic family retains `family_sources` and `family_confidence`, enabling rule-only, rule+LLM, rule+evidence, and combined ablations without giving the LLM any authority over execution or verdicts.
+The deterministic parser emits only static OpenAPI facts: method, path, parameter names, and path-derived resource/action hints. It does not create policy-family candidates. A generic registry instantiates ownership, authorization, state-transition, and replay hypotheses only when runtime evidence supplies concrete facts. With LLM disabled, every family uses a uniform prior of `0.5`; with LLM enabled, it may supply `family_priors` that affect initial confidence only. Runtime evidence, counterfactual execution, and deterministic oracles remain the sole sources of policy support or contradiction.
 
 ## Optional LLM semantic enrichment
 

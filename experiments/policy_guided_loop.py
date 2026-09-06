@@ -7,7 +7,7 @@ from inference.candidate_generator import generate_candidates
 from inference.ranker import priority_score
 from planner import plan_experiments
 from schema.models import Operation
-from semantic import enrich_from_evidence, enricher_from_env, infer_semantics
+from semantic import enricher_from_env, infer_semantics
 
 
 def prepare_experiments(operations: list[Operation], limit: int | None = None, evidence: list[Evidence] | None = None) -> dict:
@@ -15,16 +15,15 @@ def prepare_experiments(operations: list[Operation], limit: int | None = None, e
     model = infer_semantics(operations)
     enricher = enricher_from_env()
     model.operations = [enricher.enrich(operation) for operation in model.operations]
-    enrich_from_evidence(model, evidence or [])
     hypotheses = generate_candidates(model, evidence)
     feedback = FeedbackStore()
     experiments = plan_experiments(hypotheses, limit)
     return {
-        "semantic_source": sorted({item.source for item in model.operations}),
+        "semantic_prior_source": sorted({item.prior_source for item in model.operations}),
         "semantic_operations": [
             {"operation": item.operation.operation_id, "resource": item.resource, "action": item.action,
-             "security_concepts": sorted(item.security_concepts), "invariants": item.likely_invariants, "source": item.source,
-             "family_sources": {family: sorted(sources) for family, sources in item.family_sources.items()}, "family_confidence": item.family_confidence}
+             "static_facts": item.static_facts, "state_fields": item.state_fields, "relationship_fields": item.relationship_fields,
+             "family_priors": item.family_priors, "prior_source": item.prior_source}
             for item in model.operations
         ],
         "hypotheses": [{**asdict(item), "priority": priority_score(item, feedback.unexplored(item))} for item in hypotheses],

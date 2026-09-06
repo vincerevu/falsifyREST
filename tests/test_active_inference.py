@@ -21,6 +21,14 @@ from semantic import infer_semantics
 from violation.counterfactual import CounterfactualContext
 
 
+def refund_evidence():
+    return Evidence("seed", "POST /orders/{id}/refund", "order", "1", "user_a", "owner", "user_a", {"status": "PAID"}, {"status": "REFUNDED"}, "SUCCESS", 200)
+
+
+def refund_hypotheses():
+    return induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [refund_evidence()])
+
+
 def test_evidence_induction_keeps_competing_hypotheses_and_updates_support():
     model = infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")])
     evidence = Evidence(
@@ -36,7 +44,7 @@ def test_evidence_induction_keeps_competing_hypotheses_and_updates_support():
 
 
 def test_counterfactual_changes_only_actor_and_selector_uses_disagreement():
-    hypotheses = induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [])
+    hypotheses = refund_hypotheses()
     baseline = Probe("refund", "user_a", "POST", "/orders/1/refund")
     candidates = generate_counterfactuals(hypotheses, baseline, CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "PAID"}))
     selected = select(candidates, len(hypotheses))
@@ -57,7 +65,7 @@ def test_differential_effect_prioritizes_protected_state_over_http_status():
 
 
 def test_active_engine_updates_belief_from_execution_evidence():
-    hypotheses = induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [])
+    hypotheses = refund_hypotheses()
     state = {"status": "PAID"}
 
     def execute(probe):
@@ -71,7 +79,7 @@ def test_active_engine_updates_belief_from_execution_evidence():
 
 
 def test_active_engine_does_not_repeat_a_counterfactual_with_larger_budget():
-    hypotheses = induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [])
+    hypotheses = refund_hypotheses()
     state = {"status": "PAID"}
     executions = []
 
@@ -87,7 +95,7 @@ def test_active_engine_does_not_repeat_a_counterfactual_with_larger_budget():
 
 
 def test_replay_and_state_counterfactuals_require_real_setup_context():
-    hypotheses = induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [])
+    hypotheses = refund_hypotheses()
     baseline = Probe("refund", "user_a", "POST", "/orders/1/refund")
     setup = Probe("create", "user_a", "POST", "/orders")
     candidates = generate_counterfactuals(hypotheses, baseline, CounterfactualContext(
@@ -130,7 +138,7 @@ def test_state_prediction_uses_snapshot_after_setup_not_declared_context_state()
 
 
 def test_utility_and_fingerprint_are_local_to_operation_and_context():
-    hypotheses = induce_policy_hypotheses(infer_semantics([Operation("POST", "/orders/{id}/refund", "refund")]), [])
+    hypotheses = refund_hypotheses()
     baseline = Probe("refund", "user_a", "POST", "/orders/1/refund")
     first = generate_counterfactuals(hypotheses, baseline, CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "CREATED"}))[0]
     second = generate_counterfactuals(hypotheses, baseline, CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "PAID"}))[0]
