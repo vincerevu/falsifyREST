@@ -24,7 +24,7 @@ class ActivePolicyEngine:
         self.attempted: set[str] = set()
 
     def run(self, baseline: Probe, context: CounterfactualContext, budget: int,
-            execute: Callable[[Probe], Observation], snapshot: Callable[[], dict], resource_type: str = "resource") -> list[ExperimentOutcome]:
+            execute: Callable[[Probe], Observation], snapshot: Callable[[], dict], resource_type: str = "resource", protected_fields: set[str] | None = None) -> list[ExperimentOutcome]:
         outcomes: list[ExperimentOutcome] = []
         for _ in range(budget):
             candidates = generate_counterfactuals(self.hypotheses, baseline, context)
@@ -37,6 +37,8 @@ class ActivePolicyEngine:
             for step in plan.setup_steps:
                 if step.probe is not None:
                     execute(step.probe)
+            actual_context = {key: dict(value) for key, value in candidate.counterfactual.context.items()}
+            actual_context["state"] = dict(snapshot())
             before = snapshot()
             if plan.intervention_step is None or plan.intervention_step.probe is None:
                 raise RuntimeError("compiled plan has no executable intervention")
@@ -45,13 +47,13 @@ class ActivePolicyEngine:
                 if step.probe is not None:
                     execute(step.probe)
             after = snapshot()
-            effect = classify_effect(before, observed, after)
-            prediction = candidate.predictions.get(hypothesis.id, "DENY")
+            effect = classify_effect(before, observed, after, hypothesis.protected_fields or protected_fields)
+            prediction = hypothesis.predict(actual_context)
             result = compare_prediction(prediction, effect)
             observed = replace(observed, state_before=dict(before), state_after=dict(after))
-            evidence = extract_evidence(observed, self.tracker, source_trace="active", evaluation_context=candidate.counterfactual.context)
+            evidence = extract_evidence(observed, self.tracker, source_trace="active", evaluation_context=actual_context)
             self.evidence.add(evidence)
             update_from_evidence(self.hypotheses, self.evidence.all())
-            self.attempted.add(candidate.fingerprint)
+            self.attempted.update({candidate.fingerprint, candidate.fingerprint_for(actual_context)})
             outcomes.append(ExperimentOutcome(candidate.id, "ALLOW" if effect.protected_effect else "DENY", result, evidence.id))
         return outcomes

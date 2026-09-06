@@ -16,10 +16,12 @@ def diff_snapshots(before: dict[str, Any], after: dict[str, Any]) -> dict[str, t
     return {key: (before.get(key), after.get(key)) for key in set(before) | set(after) if before.get(key) != after.get(key)}
 
 
-def classify_effect(before: dict[str, Any], response: Observation, after: dict[str, Any], protected_field: str = "status") -> EffectResult:
+def classify_effect(before: dict[str, Any], response: Observation, after: dict[str, Any], protected_fields: set[str] | None = None) -> EffectResult:
     changes = diff_snapshots(before, after)
-    if protected_field in changes:
-        return EffectResult("EFFECTIVE_SUCCESS", True, f"{protected_field} changed", changes)
+    protected = set(protected_fields or ())
+    protected_changes = {key: value for key, value in changes.items() if key in protected}
+    if protected_changes:
+        return EffectResult("EFFECTIVE_SUCCESS", True, f"protected fields changed: {', '.join(sorted(protected_changes))}", protected_changes)
     if response.status_code >= 500:
         return EffectResult("ERROR", False, "server error", changes)
     if isinstance(response.response_body, dict) and response.response_body.get("error"):

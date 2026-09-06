@@ -45,7 +45,7 @@ def run() -> dict:
     before = dict(target.orders[order_id])
     observed = execute(counterexample.probe)
     after = dict(target.orders[order_id])
-    effect = classify_effect(before, observed, after)
+    effect = classify_effect(before, observed, after, {"status"})
     result = compare(counterexample.expected, effect)
     return {
         "hypothesis": asdict(refund_hypothesis), "counterexample": asdict(counterexample),

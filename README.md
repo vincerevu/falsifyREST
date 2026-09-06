@@ -54,6 +54,8 @@ The generic loop requires an explicit `CounterfactualContext` supplied by a targ
 
 `EvaluationContext` is shared by counterfactual selection and evidence induction (`actor`, `resource`, `state`, `history`). The selector records an experiment fingerprint after execution, so an unchanged experiment cannot consume the remaining budget repeatedly.
 
+`ERROR` evidence is excluded from belief updates. State-family predictions are recomputed from the snapshot taken after setup. Effect validation requires adapter- or hypothesis-supplied `protected_fields` (for example `{"status"}`, `{"balance"}`), rather than assuming every target uses a `status` field.
+
 ## Optional LLM semantic enrichment
 
 LLM output is deliberately limited to resource/action labels and candidate invariants. It cannot choose requests, infer an authorization verdict, or mark a vulnerability. The default is disabled, which is the baseline for rule-only experiments.

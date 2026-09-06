@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import json
 
 from violation.counterfactual import CounterfactualExperiment
 
@@ -16,8 +17,16 @@ class ExperimentCandidate:
 
     @property
     def fingerprint(self) -> str:
+        return self.fingerprint_for(self.counterfactual.context)
+
+    def fingerprint_for(self, context: dict) -> str:
         probe = self.counterfactual.intervention
-        return "|".join([self.counterfactual.family, probe.actor, probe.method, probe.path, self.counterfactual.mutated_condition])
+        payload = {
+            "family": self.counterfactual.family, "actor": probe.actor, "method": probe.method, "path": probe.path,
+            "condition": self.counterfactual.mutated_condition, "resource": context.get("resource", {}),
+            "state": context.get("state", {}), "history": context.get("history", {}),
+        }
+        return json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
 
 
 @dataclass(frozen=True)

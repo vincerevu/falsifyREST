@@ -24,6 +24,7 @@ class PolicyHypothesis:
     expected_effect: str = "PROTECTED_EFFECT"
     support_evidence: list[str] = field(default_factory=list)
     contradicting_evidence: list[str] = field(default_factory=list)
+    protected_fields: set[str] = field(default_factory=set)
 
     def predict(self, context: dict) -> str:
         """A hypothesis predicts allow only when all known predicates hold."""

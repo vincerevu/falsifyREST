@@ -9,7 +9,12 @@ def update_from_evidence(hypotheses: list[PolicyHypothesis], evidence: list[Evid
     for hypothesis in hypotheses:
         for item in (entry for entry in evidence if entry.operation_id == hypothesis.target_operation or entry.operation_id == hypothesis.action):
             prediction = hypothesis.predict(context_from_evidence(item).as_dict())
-            observed = "ALLOW" if item.outcome == "SUCCESS" else "DENY"
+            if item.outcome == "SUCCESS":
+                observed = "ALLOW"
+            elif item.outcome == "DENIED":
+                observed = "DENY"
+            else:
+                continue  # Transport/server failures are not authorization evidence.
             if prediction == observed:
                 if item.id not in hypothesis.support_evidence:
                     hypothesis.support_evidence.append(item.id)
