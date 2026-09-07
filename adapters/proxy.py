@@ -14,7 +14,11 @@ class ProxyTraceImporter:
             item = json.loads(line)
             trace.append(Observation(
                 status=item["status_code"], body=item.get("response_body"), headers=item.get("response_headers", {}),
-                actor=item.get("actor", "anonymous"), method=item["method"], endpoint=item["endpoint"],
+                # Some black-box generators append an identical static header more
+                # than once.  The actor label is provenance metadata, so collapse
+                # it deterministically before evidence uses it as an identity.
+                actor=str(item.get("actor", "anonymous")).split(",", 1)[0].strip() or "anonymous",
+                method=item["method"], endpoint=item["endpoint"],
                 request_path=item.get("request_path", {}), request_query=item.get("request_query", {}),
                 request_body=item.get("request_body", {}), extracted_ids=item.get("extracted_ids", {}),
                 features=item.get("features", {}), objects_read=item.get("objects_read", []),
