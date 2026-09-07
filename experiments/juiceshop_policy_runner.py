@@ -107,4 +107,4 @@ if __name__ == "__main__":
     finding = run()
     output = Path(__file__).resolve().parents[1] / "output" / "juiceshop-policy-result.json"
     write_finding(output, finding)
-    print(json.dumps(finding, indent=2))
+    print(json.dumps(finding, indent=2, default=lambda value: sorted(value) if isinstance(value, set) else str(value)))
