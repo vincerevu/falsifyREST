@@ -12,7 +12,18 @@
     "expected": "DENY",
     "confidence": 0.65,
     "support": 1,
-    "violations_tested": 0
+    "violations_tested": 0,
+    "family": "ownership",
+    "target_operation": null,
+    "resource": null,
+    "expected_observation": "DENY",
+    "evidence": [],
+    "status": "UNTESTED",
+    "predicates": [],
+    "expected_effect": "PROTECTED_EFFECT",
+    "support_evidence": [],
+    "contradicting_evidence": [],
+    "protected_fields": "set()"
   },
   "counterexample": {
     "hypothesis_id": "ownership-1",
@@ -21,12 +32,12 @@
       "id": "counterexample-ownership-1",
       "actor": "user_b",
       "method": "GET",
-      "path": "/rest/basket/8",
+      "path": "/rest/basket/11",
       "body": null,
       "cost": 1.0,
       "risk": 0.0
     },
-    "resource_key": "basket:8",
+    "resource_key": "basket:11",
     "expected": "DENY"
   },
   "expected": "DENY",
@@ -34,7 +45,8 @@
   "effect": {
     "classification": "EFFECTIVE_DISCLOSURE",
     "protected_effect": true,
-    "reason": "protected resource data returned"
+    "reason": "protected resource data returned",
+    "changed_fields": {}
   },
   "result": "COUNTEREXAMPLE",
   "baseline_comparison": {
