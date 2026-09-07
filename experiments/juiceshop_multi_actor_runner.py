@@ -17,9 +17,10 @@ from urllib.request import urlopen
 
 from actors import Actor
 from adapters.evomaster_provider import EvoMasterProvider
-from core.models import Probe
+from core.models import Observation, Probe
 from execution.http_executor import HTTPExecutor
-from experiments.juiceshop_benchmark_runner import analyze, write_csv
+from experiments.juiceshop_benchmark_runner import analyze, run_active, write_csv
+from violation.counterfactual import CounterfactualContext
 
 
 def _jwt_payload(token: str) -> dict:
@@ -89,45 +90,76 @@ def _wait_for_proxy(url: str) -> None:
 
 
 def run(config_path: str | Path, trace_path: str | Path, output: str | Path, csv_path: str | Path,
-        minutes_per_actor: str = "10m") -> dict:
+        minutes_per_actor: str = "10m", explore: bool = True) -> dict:
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
     target = config["target"]["base_url"].rstrip("/")
     proxy = config.get("multi_actor", {}).get("proxy_url", "http://127.0.0.1:3002")
     proxy_port = int(proxy.rsplit(":", 1)[1])
     trace = Path(trace_path)
     trace.parent.mkdir(parents=True, exist_ok=True)
-    trace.unlink(missing_ok=True)
-    process = subprocess.Popen([sys.executable, "-m", "adapters.capture_proxy", "--upstream", target,
-                                "--trace", str(trace), "--port", str(proxy_port)])
+    if not explore and not trace.exists():
+        raise FileNotFoundError(f"cannot reuse missing trace: {trace}")
+    process = None
+    if explore:
+        trace.unlink(missing_ok=True)
+        process = subprocess.Popen([sys.executable, "-m", "adapters.capture_proxy", "--upstream", target,
+                                    "--trace", str(trace), "--port", str(proxy_port)])
     try:
-        _wait_for_proxy(proxy)
+        if explore:
+            _wait_for_proxy(proxy)
         user_a, user_b = register_user(target, "user_a"), register_user(target, "user_b")
-        seed_basket_evidence(proxy, user_a, user_b)
+        if explore:
+            seed_basket_evidence(proxy, user_a, user_b)
         admin_config = config.get("multi_actor", {}).get("admin", {"email": "admin@juice-sh.op", "password": "admin123"})
         actors = [user_a, user_b, login_admin(target, admin_config["email"], admin_config["password"])]
         evomaster = config["evomaster"]
         runs = []
-        for actor in actors:
-            headers = [f"Authorization: Bearer {actor.token}", f"X-FalsifyREST-Actor: {actor.id}"]
-            result = EvoMasterProvider(evomaster["jar"], config["target"]["openapi"], proxy,
-                                       Path(evomaster["output_folder"]) / actor.id, minutes_per_actor, headers).run()
-            runs.append({"actor": actor.id, "returncode": result.returncode})
+        if explore:
+            for actor in actors:
+                headers = [f"Authorization: Bearer {actor.token}", f"X-FalsifyREST-Actor: {actor.id}"]
+                result = EvoMasterProvider(evomaster["jar"], config["target"]["openapi"], proxy,
+                                           Path(evomaster["output_folder"]) / actor.id, minutes_per_actor, headers).run()
+                runs.append({"actor": actor.id, "returncode": result.returncode})
         report, hypotheses, _ = analyze(config_path, trace)
+        actor_map = {actor.id: actor for actor in actors}
+        actor_map["anonymous"] = Actor("anonymous", "ANONYMOUS")
+        executor = HTTPExecutor(target)
+        basket_id = user_a.headers["X-FalsifyREST-Basket"]
+        baseline = Probe("active-basket", user_a.id, "GET", f"/rest/basket/{basket_id}")
+
+        def execute(probe: Probe) -> Observation:
+            observation = executor.execute_as(probe, actor_map[probe.actor])
+            if probe.path == baseline.path and probe.actor in {"user_b", "anonymous"} and observation.status_code < 300 and isinstance(observation.response_body, dict):
+                observation.features["protected_disclosure"] = True
+            return observation
+
+        def snapshot() -> dict:
+            current = executor.execute_as(baseline, user_a)
+            body = current.response_body if isinstance(current.response_body, dict) else {}
+            return {"Products": body.get("Products", []), "couponData": body.get("couponData"), "total": body.get("total")}
+
+        active = run_active(hypotheses, [(baseline, CounterfactualContext(owner_id=user_a.id, alternate_actor=user_b.id))],
+                            execute, snapshot, budget_per_seed=4, protected_fields=set())
+        active_outcomes = [outcome for item in active for outcome in item["outcomes"]]
         actor_counts = Counter(item.actor for sequence in __import__("adapters.proxy", fromlist=["ProxyTraceImporter"]).ProxyTraceImporter().load(trace)
                                for item in sequence.observations)
         payload = {"analysis": report.__dict__, "hypotheses": [item.__dict__ for item in hypotheses], "actors": dict(actor_counts), "runs": runs,
-                   "note": "Three authenticated static-header EvoMaster passes plus a verified cross-user basket seed. Findings require live active execution and are not inferred from coverage alone."}
+                   "active": active, "active_outcome_counts": dict(Counter(item["result"] for item in active_outcomes)),
+                   "note": "Three authenticated static-header EvoMaster passes plus live active counterfactual execution on the verified basket seed. State hypotheses require a successful state-changing workflow with before/after snapshots."}
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         Path(output).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         write_csv(csv_path, report, extra={"actors_observed": ";".join(sorted(actor_counts)), "authenticated_observations": sum(v for k, v in actor_counts.items() if k != "anonymous"),
-                                           "evomaster_actor_passes": len(runs), "minutes_per_actor": minutes_per_actor})
+                                           "evomaster_actor_passes": len(runs), "minutes_per_actor": minutes_per_actor,
+                                           "active_counterfactuals": len(active_outcomes), "active_counterexamples": sum(item["result"] == "COUNTEREXAMPLE" for item in active_outcomes),
+                                           "active_policy_holds": sum(item["result"] == "POLICY_HOLDS" for item in active_outcomes)})
         return payload
     finally:
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.kill()
+        if process is not None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
 
 
 def main() -> None:
@@ -137,8 +169,9 @@ def main() -> None:
     parser.add_argument("--output", default="output/juiceshop-benchmark-run2-analysis.json")
     parser.add_argument("--csv", default="output/juiceshop-benchmark-run2.csv")
     parser.add_argument("--minutes-per-actor", default="10m")
+    parser.add_argument("--reuse-trace", action="store_true", help="Reuse an existing full trace and run active inference/oracle only.")
     args = parser.parse_args()
-    print(json.dumps(run(args.config, args.trace, args.output, args.csv, args.minutes_per_actor), indent=2, default=str))
+    print(json.dumps(run(args.config, args.trace, args.output, args.csv, args.minutes_per_actor, not args.reuse_trace), indent=2, default=str))
 
 
 if __name__ == "__main__":

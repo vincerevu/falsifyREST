@@ -6,7 +6,7 @@ from core.models import Observation, Probe
 from evidence import EvidenceStore, extract_evidence
 from inference.inducer import update_from_evidence
 from inference.hypothesis import PolicyHypothesis
-from oracle import classify_effect, compare_prediction
+from oracle import EffectResult, classify_effect, compare_prediction
 from planner import compile_counterfactual
 from resources.tracker import ResourceTracker
 from violation.counterfactual import CounterfactualContext
@@ -47,7 +47,10 @@ class ActivePolicyEngine:
                 if step.probe is not None:
                     execute(step.probe)
             after = snapshot()
-            effect = classify_effect(before, observed, after, hypothesis.protected_fields or protected_fields)
+            if observed.features.get("protected_disclosure"):
+                effect = EffectResult("EFFECTIVE_DISCLOSURE", True, "target adapter observed protected resource data")
+            else:
+                effect = classify_effect(before, observed, after, hypothesis.protected_fields or protected_fields)
             prediction = hypothesis.predict(actual_context)
             result = compare_prediction(prediction, effect)
             observed = replace(observed, state_before=dict(before), state_after=dict(after))
