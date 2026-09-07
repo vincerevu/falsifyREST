@@ -24,7 +24,7 @@ class OpenAICompatibleSemanticEnricher(SemanticEnricher):
 
     def enrich(self, operation: SemanticOperation) -> SemanticOperation:
         prompt = self._prompt(operation)
-        request_body = {"model": self.model, "temperature": 0, "response_format": {"type": "json_object"}, "messages": [
+        request_body = {"model": self.model, "temperature": 0, "stream": False, "response_format": {"type": "json_object"}, "messages": [
             {"role": "system", "content": "Return only JSON. Do not propose requests, exploits, verdicts, or credentials."},
             {"role": "user", "content": prompt},
         ]}
@@ -33,7 +33,12 @@ class OpenAICompatibleSemanticEnricher(SemanticEnricher):
             headers["Authorization"] = f"Bearer {self.api_key}"
         request = urllib.request.Request(f"{self.base_url}/chat/completions", data=json.dumps(request_body).encode(), headers=headers, method="POST")
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            payload = json.loads(response.read().decode())
+            raw = response.read().decode()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            records = [line.removeprefix("data:").strip() for line in raw.splitlines() if line.strip() and line.strip() != "data: [DONE]"]
+            payload = json.loads(records[-1])
         content = payload["choices"][0]["message"]["content"]
         return self._apply(operation, json.loads(content))
 

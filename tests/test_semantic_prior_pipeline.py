@@ -47,7 +47,8 @@ def test_llm_only_adjusts_optional_family_priors():
     assert "status" in enriched.state_fields
 
 
-def test_prepare_experiments_runs_llm_off_with_uniform_prior_and_evidence():
+def test_prepare_experiments_runs_llm_off_with_uniform_prior_and_evidence(monkeypatch):
+    monkeypatch.setenv("FALSIFYREST_LLM_PROVIDER", "disabled")
     result = prepare_experiments([settle_operation()], evidence=[settle_evidence()])
     assert result["semantic_prior_source"] == ["uniform"]
     assert len(result["hypotheses"]) >= 4
