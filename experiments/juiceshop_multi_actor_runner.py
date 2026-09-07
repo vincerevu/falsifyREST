@@ -94,7 +94,8 @@ def seed_state_transition(trace_path: Path, executor: HTTPExecutor, actor: Actor
                                         {"ProductId": 1, "BasketId": int(basket_id), "quantity": 1}), actor)
     if not 200 <= created.status_code < 300 or not isinstance(created.response_body, dict):
         return None
-    item_id = created.response_body.get("id")
+    data = created.response_body.get("data") if isinstance(created.response_body.get("data"), dict) else {}
+    item_id = created.response_body.get("id") or data.get("id")
     if item_id is None:
         return None
     update_path = f"/api/BasketItems/{item_id}"
