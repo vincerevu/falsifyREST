@@ -79,6 +79,41 @@ def seed_basket_evidence(proxy_url: str, owner: Actor, foreign: Actor) -> None:
                  f"basket seed as {actor.id}")
 
 
+def basket_snapshot(executor: HTTPExecutor, actor: Actor, basket_id: str) -> dict:
+    observation = executor.execute_as(Probe("basket-snapshot", actor.id, "GET", f"/rest/basket/{basket_id}"), actor)
+    _success(observation, f"snapshot basket as {actor.id}")
+    body = observation.response_body if isinstance(observation.response_body, dict) else {}
+    products = body.get("Products") if isinstance(body.get("Products"), list) else []
+    return {"item_count": len(products), "total": body.get("total"), "coupon": body.get("couponData")}
+
+
+def seed_state_transition(trace_path: Path, executor: HTTPExecutor, actor: Actor, basket_id: str) -> dict | None:
+    """Create one real quantity transition and persist its before/after state."""
+    before = basket_snapshot(executor, actor, basket_id)
+    created = executor.execute_as(Probe("state-seed-create", actor.id, "POST", "/api/BasketItems",
+                                        {"ProductId": 1, "BasketId": int(basket_id), "quantity": 1}), actor)
+    if not 200 <= created.status_code < 300 or not isinstance(created.response_body, dict):
+        return None
+    item_id = created.response_body.get("id")
+    if item_id is None:
+        return None
+    update_path = f"/api/BasketItems/{item_id}"
+    before_update = basket_snapshot(executor, actor, basket_id)
+    updated = executor.execute_as(Probe("state-seed-update", actor.id, "PUT", update_path, {"quantity": 2}), actor)
+    after = basket_snapshot(executor, actor, basket_id)
+    if not 200 <= updated.status_code < 300:
+        return None
+    record = {"status_code": updated.status_code, "method": "PUT", "endpoint": update_path, "actor": actor.id,
+              "request_body": {"quantity": 2}, "response_body": updated.response_body, "response_headers": updated.headers,
+              "extracted_ids": {"resource_id": str(item_id)}, "features": {"resource_type": "basket_item"},
+              "state_before": before_update, "state_after": after, "timestamp": updated.timestamp}
+    with trace_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, default=str) + "\n")
+    return {"operation": f"PUT {update_path}", "item_id": str(item_id), "state_before": before_update, "state_after": after,
+            "probe": {"id": "active-state", "actor": actor.id, "method": "PUT", "path": update_path, "body": {"quantity": 2}},
+            "setup": {"id": "active-state-setup", "actor": actor.id, "method": "PUT", "path": update_path, "body": {"quantity": 1}}}
+
+
 def _wait_for_proxy(url: str) -> None:
     for _ in range(30):
         try:
@@ -120,6 +155,7 @@ def run(config_path: str | Path, trace_path: str | Path, output: str | Path, csv
                 result = EvoMasterProvider(evomaster["jar"], config["target"]["openapi"], proxy,
                                            Path(evomaster["output_folder"]) / actor.id, minutes_per_actor, headers).run()
                 runs.append({"actor": actor.id, "returncode": result.returncode})
+        state_seed = seed_state_transition(trace, HTTPExecutor(target), user_a, user_a.headers["X-FalsifyREST-Basket"])
         report, hypotheses, _ = analyze(config_path, trace)
         actor_map = {actor.id: actor for actor in actors}
         actor_map["anonymous"] = Actor("anonymous", "ANONYMOUS")
@@ -138,12 +174,18 @@ def run(config_path: str | Path, trace_path: str | Path, output: str | Path, csv
             body = current.response_body if isinstance(current.response_body, dict) else {}
             return {"Products": body.get("Products", []), "couponData": body.get("couponData"), "total": body.get("total")}
 
-        active = run_active(hypotheses, [(baseline, CounterfactualContext(owner_id=user_a.id, alternate_actor=user_b.id))],
-                            execute, snapshot, budget_per_seed=4, protected_fields=set())
+        seeds = [(baseline, CounterfactualContext(owner_id=user_a.id, alternate_actor=user_b.id))]
+        if state_seed:
+            state_probe = Probe(**state_seed["probe"])
+            setup_probe = Probe(**state_seed["setup"])
+            seeds.append((state_probe, CounterfactualContext(owner_id=user_a.id, alternate_actor=user_b.id,
+                                                               state=state_seed["state_before"], state_setup_probes=[setup_probe])))
+        active = run_active(hypotheses, seeds, execute, snapshot, budget_per_seed=4, protected_fields=set())
         active_outcomes = [outcome for item in active for outcome in item["outcomes"]]
         actor_counts = Counter(item.actor for sequence in __import__("adapters.proxy", fromlist=["ProxyTraceImporter"]).ProxyTraceImporter().load(trace)
                                for item in sequence.observations)
         payload = {"analysis": report.__dict__, "hypotheses": [item.__dict__ for item in hypotheses], "actors": dict(actor_counts), "runs": runs,
+                   "state_seed": state_seed,
                    "active": active, "active_outcome_counts": dict(Counter(item["result"] for item in active_outcomes)),
                    "note": "Three authenticated static-header EvoMaster passes plus live active counterfactual execution on the verified basket seed. State hypotheses require a successful state-changing workflow with before/after snapshots."}
         Path(output).parent.mkdir(parents=True, exist_ok=True)
