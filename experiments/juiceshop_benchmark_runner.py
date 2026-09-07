@@ -38,7 +38,7 @@ class BenchmarkAnalysis:
     uncovered_operations: list[str]
 
 
-def write_csv(path: str | Path, analysis: BenchmarkAnalysis, status: str = "COMPLETED", reason: str = "") -> Path:
+def write_csv(path: str | Path, analysis: BenchmarkAnalysis, status: str = "COMPLETED", reason: str = "", extra: dict | None = None) -> Path:
     """Write one reproducible benchmark-summary row; never manufacture finding rows."""
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +50,7 @@ def write_csv(path: str | Path, analysis: BenchmarkAnalysis, status: str = "COMP
         "state_transition_hypotheses": analysis.hypothesis_counts.get("state-transition", 0),
         "replay_hypotheses": analysis.hypothesis_counts.get("replay", 0), "uncovered_operation_count": len(analysis.uncovered_operations),
     }
+    row.update(extra or {})
     with output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(row))
         writer.writeheader()
@@ -131,6 +132,7 @@ def main() -> None:
     parser.add_argument("--trace", required=True, help="Normalized proxy JSONL captured during EvoMaster exploration.")
     parser.add_argument("--output", default="output/juiceshop-benchmark-analysis.json")
     parser.add_argument("--csv", default="output/juiceshop-benchmark-summary.csv")
+    parser.add_argument("--evomaster-report", help="Optional EvoMaster report.json for runtime/test/fault metrics.")
     args = parser.parse_args()
     report, hypotheses, _ = analyze(args.config, args.trace)
     payload = {"analysis": asdict(report), "hypotheses": [asdict(item) for item in hypotheses],
@@ -138,7 +140,12 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    write_csv(args.csv, report)
+    extra = {}
+    if args.evomaster_report:
+        evomaster = json.loads(Path(args.evomaster_report).read_text(encoding="utf-8"))
+        extra = {"evomaster_execution_seconds": evomaster.get("executionTimeInSeconds"), "evomaster_total_tests": evomaster.get("totalTests"),
+                 "evomaster_fault_records": evomaster.get("faults", {}).get("totalNumber")}
+    write_csv(args.csv, report, extra=extra)
     print(json.dumps(asdict(report), indent=2))
 
 

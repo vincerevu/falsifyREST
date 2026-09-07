@@ -37,5 +37,7 @@ def test_full_spec_analysis_imports_trace_into_generic_evidence_pipeline(tmp_pat
                                       CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "PENDING"}))],
                         execute, lambda: dict(state), 1, {"status"})
     assert active and active[0]["outcomes"]
-    csv_path = write_csv(tmp_path / "summary.csv", report)
-    assert "traced_operation_count" in csv_path.read_text(encoding="utf-8")
+    csv_path = write_csv(tmp_path / "summary.csv", report, extra={"evomaster_total_tests": 1})
+    content = csv_path.read_text(encoding="utf-8")
+    assert "traced_operation_count" in content
+    assert "evomaster_total_tests" in content

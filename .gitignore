@@ -13,3 +13,10 @@ configs/juiceshop.local.json
 output/juiceshop-benchmark-analysis.json
 output/juiceshop-benchmark-summary.csv
 output/juiceshop-benchmark-preflight.csv
+output/juiceshop-full-proxy.jsonl
+output/juiceshop-evomaster/
+output/juiceshop-full-proxy-run*.jsonl
+output/juiceshop-evomaster-run*/
+output/juiceshop-benchmark-run*.json
+output/juiceshop-benchmark-run*.csv
+em.yaml
