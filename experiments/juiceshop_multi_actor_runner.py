@@ -1,0 +1,145 @@
+"""Authenticated three-actor Juice Shop benchmark runner.
+
+This is deliberately target-specific glue.  It supplies real identities and one
+known basket ownership relation to the otherwise target-agnostic benchmark core;
+it does not add policy rules to inference.
+"""
+import argparse
+import base64
+import json
+import subprocess
+import sys
+import time
+import uuid
+from collections import Counter
+from pathlib import Path
+from urllib.request import urlopen
+
+from actors import Actor
+from adapters.evomaster_provider import EvoMasterProvider
+from core.models import Probe
+from execution.http_executor import HTTPExecutor
+from experiments.juiceshop_benchmark_runner import analyze, write_csv
+
+
+def _jwt_payload(token: str) -> dict:
+    part = token.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)).decode("utf-8"))
+
+
+def _success(observation, action: str) -> None:
+    if not 200 <= observation.status_code < 300:
+        raise RuntimeError(f"{action} failed: HTTP {observation.status_code}")
+
+
+def register_user(base_url: str, actor_id: str) -> Actor:
+    executor = HTTPExecutor(base_url)
+    email, password = f"falsifyrest-{uuid.uuid4().hex[:12]}@juice-sh.op", "FalsifyREST123!"
+    anonymous = Actor("anonymous", "ANONYMOUS")
+    _success(executor.execute_as(Probe("register", "anonymous", "POST", "/api/Users", {
+        "email": email, "password": password, "passwordRepeat": password,
+        "securityQuestion": {"id": 1, "question": "Your eldest siblings middle name?"}, "securityAnswer": "falsifyrest",
+    }), anonymous), f"register {actor_id}")
+    response = executor.execute_as(Probe("login", "anonymous", "POST", "/rest/user/login", {"email": email, "password": password}), anonymous)
+    _success(response, f"login {actor_id}")
+    authentication = response.response_body.get("authentication") if isinstance(response.response_body, dict) else None
+    token = authentication.get("token") if isinstance(authentication, dict) else authentication
+    if not token:
+        raise RuntimeError(f"login {actor_id} returned no JWT")
+    basket_id = _jwt_payload(token).get("bid")
+    if basket_id is None:
+        raise RuntimeError(f"login {actor_id} JWT returned no basket id")
+    actor = Actor(actor_id, "USER", token=token)
+    actor.headers.update({"Authorization": f"Bearer {token}", "X-FalsifyREST-Actor": actor_id})
+    actor.headers["X-FalsifyREST-Basket"] = str(basket_id)
+    return actor
+
+
+def login_admin(base_url: str, email: str, password: str) -> Actor:
+    executor, anonymous = HTTPExecutor(base_url), Actor("anonymous", "ANONYMOUS")
+    response = executor.execute_as(Probe("admin-login", "anonymous", "POST", "/rest/user/login", {"email": email, "password": password}), anonymous)
+    _success(response, "admin login")
+    authentication = response.response_body.get("authentication") if isinstance(response.response_body, dict) else None
+    token = authentication.get("token") if isinstance(authentication, dict) else authentication
+    if not token:
+        raise RuntimeError("admin login returned no JWT")
+    actor = Actor("admin", "ADMIN", token=token)
+    actor.headers.update({"Authorization": f"Bearer {token}", "X-FalsifyREST-Actor": "admin"})
+    return actor
+
+
+def seed_basket_evidence(proxy_url: str, owner: Actor, foreign: Actor) -> None:
+    """Record the same concrete basket under owner and foreign actors."""
+    basket_id = owner.headers["X-FalsifyREST-Basket"]
+    for actor, relation in ((owner, "owner"), (foreign, "foreign")):
+        actor.headers.update({"X-FalsifyREST-Resource-Type": "basket", "X-FalsifyREST-Resource-Id": basket_id,
+                              "X-FalsifyREST-Resource-Owner": owner.id, "X-FalsifyREST-Relation": relation})
+        _success(HTTPExecutor(proxy_url).execute_as(Probe("basket-seed", actor.id, "GET", f"/rest/basket/{basket_id}"), actor),
+                 f"basket seed as {actor.id}")
+
+
+def _wait_for_proxy(url: str) -> None:
+    for _ in range(30):
+        try:
+            urlopen(url + "/api-docs/", timeout=2)
+            return
+        except OSError:
+            time.sleep(0.2)
+    raise RuntimeError("capture proxy did not become ready")
+
+
+def run(config_path: str | Path, trace_path: str | Path, output: str | Path, csv_path: str | Path,
+        minutes_per_actor: str = "10m") -> dict:
+    config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+    target = config["target"]["base_url"].rstrip("/")
+    proxy = config.get("multi_actor", {}).get("proxy_url", "http://127.0.0.1:3002")
+    proxy_port = int(proxy.rsplit(":", 1)[1])
+    trace = Path(trace_path)
+    trace.parent.mkdir(parents=True, exist_ok=True)
+    trace.unlink(missing_ok=True)
+    process = subprocess.Popen([sys.executable, "-m", "adapters.capture_proxy", "--upstream", target,
+                                "--trace", str(trace), "--port", str(proxy_port)])
+    try:
+        _wait_for_proxy(proxy)
+        user_a, user_b = register_user(target, "user_a"), register_user(target, "user_b")
+        seed_basket_evidence(proxy, user_a, user_b)
+        admin_config = config.get("multi_actor", {}).get("admin", {"email": "admin@juice-sh.op", "password": "admin123"})
+        actors = [user_a, user_b, login_admin(target, admin_config["email"], admin_config["password"])]
+        evomaster = config["evomaster"]
+        runs = []
+        for actor in actors:
+            headers = [f"Authorization: Bearer {actor.token}", f"X-FalsifyREST-Actor: {actor.id}"]
+            result = EvoMasterProvider(evomaster["jar"], config["target"]["openapi"], proxy,
+                                       Path(evomaster["output_folder"]) / actor.id, minutes_per_actor, headers).run()
+            runs.append({"actor": actor.id, "returncode": result.returncode})
+        report, hypotheses, _ = analyze(config_path, trace)
+        actor_counts = Counter(item.actor for sequence in __import__("adapters.proxy", fromlist=["ProxyTraceImporter"]).ProxyTraceImporter().load(trace)
+                               for item in sequence.observations)
+        payload = {"analysis": report.__dict__, "hypotheses": [item.__dict__ for item in hypotheses], "actors": dict(actor_counts), "runs": runs,
+                   "note": "Three authenticated static-header EvoMaster passes plus a verified cross-user basket seed. Findings require live active execution and are not inferred from coverage alone."}
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        write_csv(csv_path, report, extra={"actors_observed": ";".join(sorted(actor_counts)), "authenticated_observations": sum(v for k, v in actor_counts.items() if k != "anonymous"),
+                                           "evomaster_actor_passes": len(runs), "minutes_per_actor": minutes_per_actor})
+        return payload
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run a reproducible authenticated three-actor Juice Shop benchmark.")
+    parser.add_argument("--config", default="configs/juiceshop.local.json")
+    parser.add_argument("--trace", default="output/juiceshop-full-proxy-run2.jsonl")
+    parser.add_argument("--output", default="output/juiceshop-benchmark-run2-analysis.json")
+    parser.add_argument("--csv", default="output/juiceshop-benchmark-run2.csv")
+    parser.add_argument("--minutes-per-actor", default="10m")
+    args = parser.parse_args()
+    print(json.dumps(run(args.config, args.trace, args.output, args.csv, args.minutes_per_actor), indent=2, default=str))
+
+
+if __name__ == "__main__":
+    main()

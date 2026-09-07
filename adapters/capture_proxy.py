@@ -50,9 +50,15 @@ class CaptureProxy:
                     parsed_request = json.loads(request_body.decode()) if request_body else {}
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     parsed_request = {}
+                explicit_resource_id = self.headers.get("X-FalsifyREST-Resource-Id")
+                features = {key: value for key, value in {
+                    "resource_type": self.headers.get("X-FalsifyREST-Resource-Type"),
+                    "owner": self.headers.get("X-FalsifyREST-Resource-Owner"),
+                }.items() if value is not None}
                 record = {"status_code": status, "method": self.command, "endpoint": self.path.split("?", 1)[0],
                           "actor": self.headers.get("X-FalsifyREST-Actor", "anonymous"), "request_query": {},
                           "request_body": parsed_request, "response_body": response_body, "response_headers": response_headers,
+                          "extracted_ids": {"resource_id": explicit_resource_id} if explicit_resource_id else {}, "features": features,
                           "timestamp": time.time()}
                 with proxy._lock, proxy.trace_path.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps(record, default=str) + "\n")

@@ -77,7 +77,13 @@ def normalize_traces(traces, operations: list[Operation], model) -> list[Observa
                 if parameters is None:
                     continue
                 observation.features = {**observation.features, "operation_id": operation.operation_id, "resource_type": semantic.resource}
-                observation.extracted_ids = {**parameters, **observation.extracted_ids}
+                # The generic tracker needs a canonical key, while preserving every
+                # OpenAPI path parameter for later target-specific interpretation.
+                canonical_id = next(iter(parameters.values()), None)
+                extracted = {**parameters, **observation.extracted_ids}
+                if canonical_id is not None:
+                    extracted.setdefault("resource_id", canonical_id)
+                observation.extracted_ids = extracted
                 normalized.append(observation)
                 break
     return normalized

@@ -8,7 +8,8 @@ class ResourceTracker:
 
     def observe(self, observation: Observation) -> list[Resource]:
         body = observation.body if isinstance(observation.body, dict) else {}
-        resource_id = observation.extracted_ids.get("resource_id") or observation.extracted_ids.get("order_id") or body.get("id")
+        resource_id = (observation.extracted_ids.get("resource_id") or observation.extracted_ids.get("order_id")
+                       or next(iter(observation.extracted_ids.values()), None) or body.get("id"))
         resource_type = observation.features.get("resource_type") or body.get("type") or "order"
         if resource_id is None:
             return []
