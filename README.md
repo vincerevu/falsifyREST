@@ -31,6 +31,14 @@ This end-to-end toy run creates and pays an order as `user_a`, infers `actor == 
 
 `configs/juiceshop.example.json` points at the full 138-operation OpenAPI artifact already generated for the local Juice Shop instance. Supply only runtime credentials for `user_a`, `user_b`, and `admin`; do not commit them. With Docker Desktop running, the next integration run is: start the authorized local target, use `EvoMasterProvider` against the schema/base URL, capture normalized HTTP JSONL through a proxy, import it using `ProxyTraceImporter`, then use the same tracker → inference → counterexample → effect-oracle pipeline shown by `policy_runner`.
 
+For full-spec trace analysis, copy the example to ignored `configs/juiceshop.local.json`, capture EvoMaster traffic as normalized JSONL, then run:
+
+```powershell
+python -m experiments.juiceshop_benchmark_runner --config configs/juiceshop.local.json --trace D:\Research\runs\juiceshop-proxy.jsonl
+```
+
+This reports OpenAPI/trace coverage and evidence-derived hypotheses across the whole specification. Live active execution deliberately requires explicit auth, setup, context, and snapshot adapters through `run_active()`; the runner does not guess these from an OpenAPI document or report findings from coverage alone.
+
 ## Scope
 
 The toy target models `DRAFT -> SUBMITTED -> APPROVED`. The intentional vulnerability is that a manager can approve a draft order. No LLM is used and the oracle is deterministic. The package also includes a standard-library HTTP executor/session/reset layer. The EvoMaster adapter is offline-only: it normalizes generated actions into `Probe` objects and does not modify EvoMaster.

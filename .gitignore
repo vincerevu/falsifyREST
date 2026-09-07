@@ -10,3 +10,4 @@ output/policy-toy-result.json
 
 # Local runtime credentials/configuration must never be committed.
 configs/juiceshop.local.json
+output/juiceshop-benchmark-analysis.json
