@@ -6,6 +6,7 @@ exposed as an injected adapter API: target-specific authentication, resource set
 and snapshots must be supplied explicitly instead of being guessed from OpenAPI.
 """
 import argparse
+import csv
 import json
 import re
 from collections import Counter
@@ -35,6 +36,25 @@ class BenchmarkAnalysis:
     evidence_count: int
     hypothesis_counts: dict[str, int]
     uncovered_operations: list[str]
+
+
+def write_csv(path: str | Path, analysis: BenchmarkAnalysis, status: str = "COMPLETED", reason: str = "") -> Path:
+    """Write one reproducible benchmark-summary row; never manufacture finding rows."""
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    row = {
+        "status": status, "reason": reason, "operation_count": analysis.operation_count,
+        "traced_operation_count": analysis.traced_operation_count, "observation_count": analysis.observation_count,
+        "evidence_count": analysis.evidence_count, "ownership_hypotheses": analysis.hypothesis_counts.get("ownership", 0),
+        "authorization_hypotheses": analysis.hypothesis_counts.get("authorization", 0),
+        "state_transition_hypotheses": analysis.hypothesis_counts.get("state-transition", 0),
+        "replay_hypotheses": analysis.hypothesis_counts.get("replay", 0), "uncovered_operation_count": len(analysis.uncovered_operations),
+    }
+    with output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(row))
+        writer.writeheader()
+        writer.writerow(row)
+    return output
 
 
 def _path_match(template: str, path: str) -> dict[str, str] | None:
@@ -110,6 +130,7 @@ def main() -> None:
     parser.add_argument("--config", default="configs/juiceshop.local.json", help="Ignored local config; copy the example first.")
     parser.add_argument("--trace", required=True, help="Normalized proxy JSONL captured during EvoMaster exploration.")
     parser.add_argument("--output", default="output/juiceshop-benchmark-analysis.json")
+    parser.add_argument("--csv", default="output/juiceshop-benchmark-summary.csv")
     args = parser.parse_args()
     report, hypotheses, _ = analyze(args.config, args.trace)
     payload = {"analysis": asdict(report), "hypotheses": [asdict(item) for item in hypotheses],
@@ -117,6 +138,7 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    write_csv(args.csv, report)
     print(json.dumps(asdict(report), indent=2))
 
 

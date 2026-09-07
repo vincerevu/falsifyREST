@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from experiments.juiceshop_benchmark_runner import analyze
+from experiments.juiceshop_benchmark_runner import analyze, write_csv
 from experiments.juiceshop_benchmark_runner import run_active
 from core.models import Observation, Probe
 from violation.counterfactual import CounterfactualContext
@@ -37,3 +37,5 @@ def test_full_spec_analysis_imports_trace_into_generic_evidence_pipeline(tmp_pat
                                       CounterfactualContext(owner_id="user_a", alternate_actor="user_b", state={"status": "PENDING"}))],
                         execute, lambda: dict(state), 1, {"status"})
     assert active and active[0]["outcomes"]
+    csv_path = write_csv(tmp_path / "summary.csv", report)
+    assert "traced_operation_count" in csv_path.read_text(encoding="utf-8")
