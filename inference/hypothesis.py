@@ -25,6 +25,10 @@ class PolicyHypothesis:
     support_evidence: list[str] = field(default_factory=list)
     contradicting_evidence: list[str] = field(default_factory=list)
     protected_fields: set[str] = field(default_factory=set)
+    relevant_dimensions: set[str] = field(default_factory=set)
+    applicable_operators: set[str] = field(default_factory=set)
+    supporting_trace_ids: list[str] = field(default_factory=list)
+    falsification_condition: str | None = None
 
     def predict(self, context: dict) -> str:
         """A hypothesis predicts allow only when all known predicates hold."""
@@ -37,3 +41,8 @@ class PolicyHypothesis:
             if condition.startswith("status == "):
                 return condition.removeprefix("status == ")
         return None
+
+    def is_applicable_operator(self, operator: object) -> bool:
+        """Keep family inference separate from concrete trace mutation."""
+        name = getattr(operator, "name", str(operator))
+        return not self.applicable_operators or name in self.applicable_operators

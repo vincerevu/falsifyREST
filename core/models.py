@@ -43,6 +43,29 @@ class Probe:
 
 
 @dataclass
+class TraceStep:
+    """One concrete request in an observed or candidate workflow."""
+    probe: Probe
+    observation: Observation | None = None
+    bindings: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ExecutionTrace:
+    """A replayable workflow.  Search transforms this object, never a policy family."""
+    id: str
+    steps: list[TraceStep]
+
+    @classmethod
+    def from_probe(cls, probe: Probe) -> "ExecutionTrace":
+        return cls(probe.id, [TraceStep(probe)])
+
+    @property
+    def probes(self) -> list[Probe]:
+        return [step.probe for step in self.steps]
+
+
+@dataclass
 class Hypothesis:
     id: str
     phase: str

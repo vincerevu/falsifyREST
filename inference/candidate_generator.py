@@ -38,7 +38,8 @@ class OwnershipFamily(PolicyFamily):
             return []
         common = self._common(semantic)
         return [PolicyHypothesis(f"owner-only:{semantic.operation.operation_id}", "actor == resource.owner", family=self.name,
-                                 predicates=[Predicate(FieldRef("actor", "id"), "eq", FieldRef("resource", "owner_id"))], **common)]
+                                 predicates=[Predicate(FieldRef("actor", "id"), "eq", FieldRef("resource", "owner_id"))],
+                                 relevant_dimensions={"actor", "resource"}, applicable_operators={"actor_swap", "resource_swap"}, **common)]
 
 
 class AuthorizationFamily(PolicyFamily):
@@ -49,7 +50,8 @@ class AuthorizationFamily(PolicyFamily):
             return []
         common = self._common(semantic)
         return [PolicyHypothesis(f"authenticated:{semantic.operation.operation_id}", "actor.authenticated", family=self.name,
-                                 predicates=[Predicate(FieldRef("actor", "authenticated"), "eq", True)], **common)]
+                                 predicates=[Predicate(FieldRef("actor", "authenticated"), "eq", True)],
+                                 relevant_dimensions={"actor"}, applicable_operators={"actor_swap"}, **common)]
 
 
 class StateTransitionFamily(PolicyFamily):
@@ -60,7 +62,8 @@ class StateTransitionFamily(PolicyFamily):
         states = {(field, value) for item in observations for field, value in item.pre_state.items() if value is not None}
         common = self._common(semantic)
         return [PolicyHypothesis(f"state:{semantic.operation.operation_id}:{field}:{value}", f"state.{field} == {value}", family=self.name,
-                                 predicates=[Predicate(FieldRef("state", field), "eq", value)], **common) for field, value in sorted(states)]
+                                 predicates=[Predicate(FieldRef("state", field), "eq", value)], relevant_dimensions={"state", "sequence"},
+                                 applicable_operators={"omit_step", "reorder", "repeat"}, **common) for field, value in sorted(states)]
 
 
 class ReplayFamily(PolicyFamily):
@@ -71,7 +74,8 @@ class ReplayFamily(PolicyFamily):
             return []
         common = self._common(semantic)
         return [PolicyHypothesis(f"single-use:{semantic.operation.operation_id}", "action has not already succeeded", family=self.name,
-                                 predicates=[Predicate(FieldRef("history", common["target_operation"]), "eq", False)], **common)]
+                                 predicates=[Predicate(FieldRef("history", common["target_operation"]), "eq", False)],
+                                 relevant_dimensions={"history", "sequence"}, applicable_operators={"repeat"}, **common)]
 
 
 POLICY_FAMILIES: list[PolicyFamily] = [OwnershipFamily(), AuthorizationFamily(), StateTransitionFamily(), ReplayFamily()]
