@@ -35,3 +35,5 @@ class ExperimentOutcome:
     observed: str
     result: str
     evidence_id: str | None = None
+    classification: str = "INCONCLUSIVE"
+    witness: object | None = None

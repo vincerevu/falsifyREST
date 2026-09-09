@@ -6,6 +6,7 @@ from inference.hypothesis import PolicyHypothesis
 
 class TransformationOperator(ABC):
     name: str
+    affected_dimensions: frozenset[str] = frozenset()
 
     @abstractmethod
     def applicable(self, hypothesis: PolicyHypothesis, trace: ExecutionTrace, context: object) -> bool: ...

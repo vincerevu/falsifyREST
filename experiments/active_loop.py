@@ -10,7 +10,7 @@ from oracle import EffectResult, FalsificationOracle, classify_effect, compare_p
 from planner import compile_trace
 from resources.tracker import ResourceTracker
 from search import CounterexampleSearchEngine, SeedSelector
-from search.operators import ActorSwap, OmitStep, Repeat, ResourceSwap
+from search.operators import ActorSwap, OmitStep, Repeat, Reorder, ResourceSwap
 from violation.counterfactual import CounterfactualContext
 
 from .models import ExperimentOutcome
@@ -25,22 +25,22 @@ class ActivePolicyEngine:
         self.tracker = tracker
         self.attempted: set[str] = set()
         self.seed_selector = SeedSelector()
-        self.search = search or CounterexampleSearchEngine([ActorSwap(), ResourceSwap(), Repeat(), OmitStep()])
+        self.search = search or CounterexampleSearchEngine([ActorSwap(), ResourceSwap(), Repeat(), OmitStep(), Reorder()])
         self.oracle = FalsificationOracle()
 
-    def run(self, baseline: Probe | ExecutionTrace, context: CounterfactualContext, budget: int,
+    def run(self, baseline: Probe | ExecutionTrace | list[ExecutionTrace], context: CounterfactualContext, budget: int,
             execute: Callable[[Probe], Observation], snapshot: Callable[[], dict], resource_type: str = "resource",
             protected_fields: set[str] | None = None) -> list[ExperimentOutcome]:
-        seed = baseline if isinstance(baseline, ExecutionTrace) else ExecutionTrace.from_probe(baseline)
+        seeds = list(baseline) if isinstance(baseline, list) else [baseline if isinstance(baseline, ExecutionTrace) else ExecutionTrace.from_probe(baseline)]
         if context.state_setup_probes:
-            seed = ExecutionTrace(seed.id, [*(TraceStep(probe) for probe in context.state_setup_probes), *seed.steps])
+            seeds = [ExecutionTrace(seed.id, [*(TraceStep(probe) for probe in context.state_setup_probes), *seed.steps]) for seed in seeds]
         outcomes: list[ExperimentOutcome] = []
         outcome_index: dict[str, int] = {}
         remaining = budget
         for hypothesis in sorted(self.hypotheses, key=lambda item: item.confidence, reverse=True):
             if remaining <= 0:
                 break
-            for selected_seed in self.seed_selector.select(hypothesis, [seed]):
+            for selected_seed in self.seed_selector.select(hypothesis, seeds):
                 if remaining <= 0:
                     break
 
@@ -71,9 +71,20 @@ class ActivePolicyEngine:
                                                 evaluation_context=actual_context)
                     self.evidence.add(evidence)
                     update_from_evidence(self.hypotheses, self.evidence.all())
-                    verdict = self.oracle.evaluate(hypothesis, node.seed_trace, node.trace, effect)
+                    control_observation = node.seed_trace.steps[-1].observation
+                    control_effect = None
+                    if control_observation is not None:
+                        control_effect = classify_effect(
+                            control_observation.state_before, control_observation,
+                            control_observation.state_after, hypothesis.protected_fields or protected_fields,
+                        )
+                    verdict = self.oracle.evaluate(
+                        hypothesis, node.seed_trace, node.trace, effect, actual_context,
+                        control_effect, observed.status_code,
+                    )
                     falsified = verdict.falsified and result == "COUNTEREXAMPLE"
-                    outcome = ExperimentOutcome(hypothesis.id, "ALLOW" if effect.protected_effect else "DENY", result, evidence.id)
+                    outcome = ExperimentOutcome(hypothesis.id, "ALLOW" if effect.protected_effect else "DENY", result,
+                                                evidence.id, verdict.classification, verdict.witness)
                     # The public outcome list reports the latest witness per
                     # hypothesis; detailed attempts remain in evidence/search.
                     if hypothesis.id in outcome_index:

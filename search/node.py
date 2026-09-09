@@ -18,6 +18,7 @@ class SearchNode:
     depth: int = 0
     cost: float = 0.0
     parent_id: str | None = None
+    affected_dimensions: frozenset[str] = field(default_factory=frozenset)
     id: str = field(default="")
 
     @classmethod
@@ -30,4 +31,5 @@ class SearchNode:
         transformations = parent.transformations + (name,)
         return cls(parent.hypothesis_id, parent.seed_trace, trace, transformations, parent.depth + 1,
                    parent.cost + sum(step.probe.cost for step in trace.steps), parent.id,
+                   parent.affected_dimensions | frozenset(getattr(operator, "affected_dimensions", ())),
                    f"{parent.hypothesis_id}:{'-'.join(transformations)}:{trace_fingerprint(trace)}")

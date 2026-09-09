@@ -6,6 +6,7 @@ from .base import TransformationOperator
 
 class ResourceSwap(TransformationOperator):
     name = "resource_swap"
+    affected_dimensions = frozenset({"resource"})
 
     def applicable(self, hypothesis, trace, context) -> bool:
         return bool(trace.steps and getattr(context, "alternate_resource_path", None))

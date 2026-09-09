@@ -27,6 +27,8 @@ class CounterfactualContext:
     state_setup_probes: list[Probe] = field(default_factory=list)
     observation_probes: list[Probe] = field(default_factory=list)
     alternate_resource_path: str | None = None
+    initial_bindings: set[str] = field(default_factory=set)
+    actor_sessions: dict[str, bool] = field(default_factory=dict)
 
 
 class CounterfactualGenerator:

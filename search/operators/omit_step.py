@@ -4,6 +4,7 @@ from .base import TransformationOperator
 
 class OmitStep(TransformationOperator):
     name = "omit_step"
+    affected_dimensions = frozenset({"prerequisite", "sequence"})
 
     def applicable(self, hypothesis, trace, context) -> bool:
         return len(trace.steps) > 1

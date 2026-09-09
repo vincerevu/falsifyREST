@@ -6,6 +6,7 @@ from .base import TransformationOperator
 
 class ActorSwap(TransformationOperator):
     name = "actor_swap"
+    affected_dimensions = frozenset({"actor", "session"})
 
     def applicable(self, hypothesis, trace, context) -> bool:
         return bool(trace.steps and getattr(context, "alternate_actor", None))

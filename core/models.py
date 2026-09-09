@@ -48,6 +48,9 @@ class TraceStep:
     probe: Probe
     observation: Observation | None = None
     bindings: dict[str, Any] = field(default_factory=dict)
+    produces: set[str] = field(default_factory=set)
+    consumes: set[str] = field(default_factory=set)
+    session: str | None = None
 
 
 @dataclass

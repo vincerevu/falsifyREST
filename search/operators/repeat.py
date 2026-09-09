@@ -6,6 +6,7 @@ from .base import TransformationOperator
 
 class Repeat(TransformationOperator):
     name = "repeat"
+    affected_dimensions = frozenset({"history", "occurrence_count"})
 
     def applicable(self, hypothesis, trace, context) -> bool:
         return bool(trace.steps)

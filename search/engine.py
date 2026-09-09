@@ -13,6 +13,7 @@ from .scoring import priority
 class SearchResult:
     counterexample: SearchNode | None = None
     evaluated: list[SearchNode] = field(default_factory=list)
+    pruned: dict[str, int] = field(default_factory=dict)
 
 
 class CounterexampleSearchEngine:
@@ -26,7 +27,7 @@ class CounterexampleSearchEngine:
         frontier, pruner, result = BestFirstFrontier(), SearchPruner(self.max_depth), SearchResult()
         root = SearchNode.root(hypothesis.id, seed)
         # The successful seed establishes the workflow; only mutations are executed as tests.
-        pruner.reject(root, hypothesis)
+        pruner.reject(root, hypothesis, context)
         frontier.push(root, priority(root, hypothesis))
         while frontier and len(result.evaluated) < budget:
             node = frontier.pop()
@@ -38,11 +39,13 @@ class CounterexampleSearchEngine:
                 if not operator.applicable(hypothesis, node.trace, context):
                     continue
                 child = SearchNode.child(node, operator.apply(node.trace, context), operator)
-                if pruner.reject(child, hypothesis):
+                if pruner.reject(child, hypothesis, context):
                     continue
                 result.evaluated.append(child)
                 if evaluate(child):
                     result.counterexample = child
+                    result.pruned = dict(pruner.reasons)
                     return result
                 frontier.push(child, priority(child, hypothesis))
+        result.pruned = dict(pruner.reasons)
         return result
