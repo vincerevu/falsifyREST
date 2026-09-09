@@ -1,6 +1,16 @@
 # falsifyREST
 
-falsifyREST is a standalone policy-guided REST security-testing prototype. EvoMaster is an external state/setup exploration provider; falsifyREST imports its traces, infers structured ownership policies, constructs a minimal counterfactual request, and validates a protected state effect before reporting a counterexample.
+falsifyREST is a standalone policy-guided REST security-testing prototype. EvoMaster is an external state/setup exploration provider; falsifyREST imports its traces, infers structured policy hypotheses, constructs minimal counterfactual workflows, and validates protected effects before reporting a counterexample.
+
+## API-agnostic core boundary
+
+The research method is target-agnostic. Code under `core/`, `inference/`, `search/`, `oracle/`, and `violation/` must not contain benchmark-specific endpoint names, roles, workflow states, or vulnerability rules.
+
+Target-specific mechanics live behind `adapters.target.TargetAdapter`. An adapter may know how a concrete SUT authenticates actors, creates resources, reaches a state, resets the system, and observes protected fields. Those mechanics are experiment plumbing, not policy inference.
+
+`experiments.target_runner.run_with_adapter()` is the shared active runner. It selects hypotheses by HTTP method plus OpenAPI path template, asks the adapter for a concrete `CounterfactualContext`, and delegates the experiment to the generic `ActivePolicyEngine`.
+
+This distinction is intentional: the core is reusable across REST APIs, while zero-configuration execution is not claimed. OpenAPI alone does not reliably reveal credentials, ownership relations, state-setup procedures, reset semantics, or protected effects.
 
 ## Run
 
@@ -25,11 +35,13 @@ python -m experiments.policy_runner
 
 This end-to-end toy run creates and pays an order as `user_a`, infers `actor == resource.owner` for refund from a successful trace, then has `user_b` refund the same paid order. The target intentionally permits this; the effect oracle verifies `PAID -> REFUNDED` and records `COUNTEREXAMPLE` in `output/policy-toy-result.json`.
 
-`schema/`, `actors/`, `execution/trace_store.py`, `resources/`, `evidence/`, `inference/`, `violation/`, and `oracle/` provide the MVP modules. `adapters/EvoMasterProvider` launches EvoMaster in black-box mode and returns an `ExplorationResult`; when a proxy JSONL is supplied it includes normalized traces through `ProxyTraceImporter`. It intentionally does not parse generated EvoMaster source tests.
+The toy scenario is an example target only. Its names and workflow must not be imported into the generic algorithm.
+
+`schema/`, `actors/`, `execution/trace_store.py`, `resources/`, `evidence/`, `inference/`, `violation/`, `search/`, and `oracle/` provide the reusable modules. `adapters/EvoMasterProvider` launches EvoMaster in black-box mode and returns an `ExplorationResult`; when a proxy JSONL is supplied it includes normalized traces through `ProxyTraceImporter`. It intentionally does not parse generated EvoMaster source tests.
 
 ## Juice Shop handoff
 
-`configs/juiceshop.example.json` points at the full 138-operation OpenAPI artifact already generated for the local Juice Shop instance. Supply only runtime credentials for `user_a`, `user_b`, and `admin`; do not commit them. With Docker Desktop running, the next integration run is: start the authorized local target, use `EvoMasterProvider` against the schema/base URL, capture normalized HTTP JSONL through a proxy, import it using `ProxyTraceImporter`, then use the same tracker → inference → counterexample → effect-oracle pipeline shown by `policy_runner`.
+`configs/juiceshop.example.json` points at the full 138-operation OpenAPI artifact already generated for the local Juice Shop instance. Supply only runtime credentials for the configured actors; do not commit them. With Docker Desktop running, the integration flow is: start the authorized local target, use `EvoMasterProvider` against the schema/base URL, capture normalized HTTP JSONL through a proxy, import it using `ProxyTraceImporter`, then use the same tracker → inference → counterexample → effect-oracle pipeline.
 
 For full-spec trace analysis, copy the example to ignored `configs/juiceshop.local.json`, capture EvoMaster traffic as normalized JSONL, then run:
 
@@ -37,11 +49,11 @@ For full-spec trace analysis, copy the example to ignored `configs/juiceshop.loc
 python -m experiments.juiceshop_benchmark_runner --config configs/juiceshop.local.json --trace D:\Research\runs\juiceshop-proxy.jsonl
 ```
 
-This reports OpenAPI/trace coverage and evidence-derived hypotheses across the whole specification. Live active execution deliberately requires explicit auth, setup, context, and snapshot adapters through `run_active()`; the runner does not guess these from an OpenAPI document or report findings from coverage alone.
+This reports OpenAPI/trace coverage and evidence-derived hypotheses across the whole specification. Live active execution requires explicit target authentication, setup, context, snapshot, reset, and protected-field behavior through a `TargetAdapter`; the algorithm does not guess these from an OpenAPI document or report findings from coverage alone.
 
 ## Scope
 
-The toy target models `DRAFT -> SUBMITTED -> APPROVED`. The intentional vulnerability is that a manager can approve a draft order. No LLM is used and the oracle is deterministic. The package also includes a standard-library HTTP executor/session/reset layer. The EvoMaster adapter is offline-only: it normalizes generated actions into `Probe` objects and does not modify EvoMaster.
+The repository includes toy targets for reproducible tests, but target-specific behavior is not part of the research method. No LLM is required and the oracle is deterministic. The package also includes a standard-library HTTP executor/session/reset layer. The EvoMaster adapter normalizes generated actions into `Probe` objects and does not modify EvoMaster.
 
 ## Rule-first, state-aware pipeline
 
@@ -49,28 +61,33 @@ The toy target models `DRAFT -> SUBMITTED -> APPROVED`. The intentional vulnerab
 
 ## Pipeline
 
-1. Parse OpenAPI operations and produce semantic bootstrap candidates; these are not policies.
+1. Parse OpenAPI operations and produce static semantic metadata; these facts are not policies.
 2. Import real HTTP traces and normalize them into an `EvidenceStore`.
-3. Keep competing typed-predicate hypotheses (ownership, authenticated access, state transition, replay) and induce support/contradiction from evidence.
-4. Generate a minimal counterfactual that changes one condition at a time, then select by prediction disagreement, impact, and cost.
-5. Compile concrete probe steps, execute them, and compare black-box snapshots before/after.
-6. Update hypothesis support or contradiction from the deterministic effect oracle, then iterate while budget remains.
+3. Instantiate competing typed-predicate hypotheses only when runtime evidence supplies the required concrete facts.
+4. Generate minimal counterfactual workflow transformations that change one relevant dimension at a time.
+5. Select experiments under a request budget, execute them through a target adapter, and compare black-box observations/snapshots.
+6. Validate the predicted policy against a deterministic effect/disclosure oracle and record a reproducible falsification witness.
+7. Update support/contradiction from observed evidence and continue while budget remains.
 
-`experiments.active_loop.ActivePolicyEngine` is the generic loop. The Juice Shop runner remains a target-specific benchmark adapter, not part of the core engine.
+`experiments.active_loop.ActivePolicyEngine` is the generic loop. Benchmark runners and target adapters are integration layers, not part of the core inference algorithm.
 
-The generic loop requires an explicit `CounterfactualContext` supplied by a target adapter: known owner/alternate identities, observed state, optional state-setup probes, and optional observation probes. It will not silently pretend a copied request changes state. Replay executes the accepted baseline once before repeating it; state-family candidates are skipped until a concrete alternative-state setup is available.
+The generic loop requires an explicit `CounterfactualContext`: known owner/alternate identities when available, observed state, optional state-setup probes, optional observation probes, alternate resource bindings, and actor sessions. It will not silently pretend that copying a request changes identity or state. Replay executes an accepted baseline before repeating it; state-family experiments require a concrete alternative-state setup.
 
 `EvaluationContext` is shared by counterfactual selection and evidence induction (`actor`, `resource`, `state`, `history`). The selector records an experiment fingerprint after execution, so an unchanged experiment cannot consume the remaining budget repeatedly.
 
-`ERROR` evidence is excluded from belief updates. State-family predictions are recomputed from the snapshot taken after setup. Effect validation requires adapter- or hypothesis-supplied `protected_fields` (for example `{"status"}`, `{"balance"}`), rather than assuming every target uses a `status` field.
+`ERROR` evidence is excluded from belief updates. State-family predictions are recomputed from the snapshot taken after setup. Effect validation requires adapter- or hypothesis-supplied `protected_fields`, rather than assuming a particular domain field such as `status` or `balance`.
+
+## Policy families
+
+The generic registry currently includes ownership, authenticated-access authorization, state-transition, and replay families. A family is instantiated from typed runtime facts, not from a benchmark endpoint name. Adding a new family should mean adding a reusable predicate/evidence requirement and applicable generic trace transformations, never a target rule such as “if endpoint X then policy Y”.
 
 ## Semantic prior
 
-The deterministic parser emits only static OpenAPI facts: method, path, parameter names, and path-derived resource/action hints. It does not create policy-family candidates. A generic registry instantiates ownership, authorization, state-transition, and replay hypotheses only when runtime evidence supplies concrete facts. With LLM disabled, every family uses a uniform prior of `0.5`; with LLM enabled, it may supply `family_priors` that affect initial confidence only. Runtime evidence, counterfactual execution, and deterministic oracles remain the sole sources of policy support or contradiction.
+The deterministic parser emits only static OpenAPI facts: method, path, parameter names, and resource/action hints. It does not itself assert a security policy. With LLM disabled, families use a uniform prior. With LLM enabled, semantic enrichment may influence initial family priors or labels only. Runtime evidence, counterfactual execution, and deterministic oracles remain the sole sources of policy support, contradiction, and vulnerability verdicts.
 
 ## Optional LLM semantic enrichment
 
-LLM output is deliberately limited to resource/action labels and candidate invariants. It cannot choose requests, infer an authorization verdict, or mark a vulnerability. The default is disabled, which is the baseline for rule-only experiments.
+LLM output is deliberately limited to semantic enrichment and optional priors. It cannot choose a final vulnerability verdict, replace runtime evidence, or replace the deterministic oracle. The default is disabled, which is the baseline for rule-only experiments.
 
 ```powershell
 # Default: no LLM request
