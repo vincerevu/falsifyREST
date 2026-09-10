@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from core.models import ExecutionTrace, TraceStep
+from core.models import ExecutionTrace
 from .base import TransformationOperator
 
 
@@ -14,5 +14,5 @@ class ActorSwap(TransformationOperator):
     def apply(self, trace: ExecutionTrace, context: object) -> ExecutionTrace:
         steps = list(trace.steps)
         target = steps[-1]
-        steps[-1] = TraceStep(replace(target.probe, id=f"{target.probe.id}:actor-swap", actor=context.alternate_actor), target.observation, dict(target.bindings))
+        steps[-1] = replace(target, probe=replace(target.probe, id=f"{target.probe.id}:actor-swap", actor=context.alternate_actor))
         return ExecutionTrace(f"{trace.id}:actor-swap", steps)

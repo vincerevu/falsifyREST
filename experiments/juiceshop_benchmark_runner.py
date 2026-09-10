@@ -15,10 +15,11 @@ from pathlib import Path
 from typing import Callable
 
 from adapters.proxy import ProxyTraceImporter
+from adapters.target import CallbackTargetAdapter
 from core.models import Observation, Probe
 from evidence import EvidenceStore, extract_evidence
 from execution.trace_store import TraceStore
-from experiments.active_loop import ActivePolicyEngine
+from experiments.target_runner import run_with_adapter
 from inference.evidence_inducer import induce_policy_hypotheses
 from inference.hypothesis import PolicyHypothesis
 from resources import ResourceTracker
@@ -114,22 +115,13 @@ def analyze(config_path: str | Path, trace_path: str | Path) -> tuple[BenchmarkA
 def run_active(hypotheses: list[PolicyHypothesis], seeds: list[tuple[Probe, CounterfactualContext]],
                execute: Callable[[Probe], Observation], snapshot: Callable[[], dict], budget_per_seed: int,
                protected_fields: set[str]) -> list[dict]:
-    """Execute adapter-supplied concrete counterfactual contexts using the generic core engine."""
-    results = []
-    for baseline, context in seeds:
-        relevant = []
-        for item in hypotheses:
-            if not item.target_operation:
-                continue
-            method, template = item.target_operation.split(" ", 1)
-            if method == baseline.method and _path_match(template, baseline.path) is not None:
-                relevant.append(item)
-        if not relevant:
-            continue
-        engine = ActivePolicyEngine(relevant)
-        outcomes = engine.run(baseline, context, budget_per_seed, execute, snapshot, protected_fields=protected_fields)
-        results.append({"baseline": asdict(baseline), "outcomes": [asdict(item) for item in outcomes]})
-    return results
+    """Compatibility wrapper; all active testing is delegated to target_runner."""
+    contexts = {baseline.id: context for baseline, context in seeds}
+    adapter = CallbackTargetAdapter(
+        context_resolver=lambda baseline: contexts[baseline.id], executor=execute, snapshotter=snapshot,
+        protected_field_resolver=lambda _baseline: set(protected_fields),
+    )
+    return run_with_adapter(hypotheses, [baseline for baseline, _ in seeds], adapter, budget_per_seed)
 
 
 def main() -> None:

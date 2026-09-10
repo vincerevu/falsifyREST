@@ -1,1 +1,4 @@
-# MVP uses only the Python standard library.
+typer>=0.12
+rich>=13
+questionary>=2
+PyYAML>=6

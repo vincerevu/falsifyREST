@@ -1,0 +1,72 @@
+target:
+  type: juiceshop
+  base_url: http://localhost:3001
+  openapi: D:/Research/benchmarks/2026-08-27/juice-shop-openapi-full.json
+  openapi_source: file
+
+exploration:
+  provider: evomaster
+  trace_path: output/juiceshop-proxy.jsonl
+  evomaster_jar: D:/Research/tools/evomaster/evomaster.jar
+  max_time: 1m
+  proxy_port: 3002
+
+llm:
+  mode: rule-only
+  provider: disabled
+
+recipe_synthesis:
+  enabled: false
+  max_repairs: 1
+  batch_size: 15
+  request_timeout: 600
+  request_retries: 1
+  retry_backoff: 3
+  batch_delay: 1
+
+actors:
+  owner:
+    email: owner@test.local
+    password_env: FALSIFYREST_JUICESHOP_OWNER_PASSWORD
+  attacker:
+    email: attacker@test.local
+    password_env: FALSIFYREST_JUICESHOP_ATTACKER_PASSWORD
+
+budget: 50
+output_dir: output
+
+live:
+  enabled: true
+  max_seeds: 10
+  protected_fields: []
+
+# Declarative resource lifecycles consumed by the generic recipe runner.
+resources:
+  basket:
+    baseline:
+      actor: owner
+      method: GET
+      path: /rest/basket/${actor.owner.basket_id}
+  basket_item:
+    setup:
+      - request:
+          actor: owner
+          method: POST
+          path: /api/BasketItems
+          body:
+            ProductId: 1
+            BasketId: ${actor.owner.basket_id}
+            quantity: 1
+          save:
+            resource_id: $.data.id
+    baseline:
+      actor: owner
+      method: PUT
+      path: /api/BasketItems/${resource.resource_id}
+      body:
+        quantity: 2
+    cleanup:
+      - request:
+          actor: owner
+          method: DELETE
+          path: /api/BasketItems/${resource.resource_id}

@@ -1,21 +1,29 @@
-from core.models import Probe
-from experiments.target_runner import operation_matches, relevant_hypotheses
+from adapters.target import CallbackTargetAdapter
+from core.models import Observation, Probe
+from experiments.target_runner import run_with_adapter
 from inference.hypothesis import PolicyHypothesis
+from violation.counterfactual import CounterfactualContext
 
 
-def test_operation_matches_openapi_template_without_domain_rules():
-    probe = Probe("p", "actor-a", "PATCH", "/widgets/42/activate")
-    assert operation_matches("PATCH /widgets/{widget_id}/activate", probe)
-    assert not operation_matches("POST /widgets/{widget_id}/activate", probe)
-    assert not operation_matches("PATCH /accounts/{account_id}/activate", probe)
+def test_generic_target_runner_owns_active_pipeline_and_adapter_owns_mechanics():
+    resets, state = [], {"status": "PENDING"}
 
+    def execute(probe):
+        state["status"] = "SETTLED"
+        return Observation(200, {}, {}, probe.actor, probe.method, probe.path,
+                           features={"operation_id": "POST /claims/{claimId}/settle"})
 
-def test_relevant_hypotheses_are_selected_by_method_and_template_only():
-    baseline = Probe("p", "actor-a", "DELETE", "/documents/abc")
-    hypotheses = [
-        PolicyHypothesis("matching", "actor.authenticated", "DELETE /documents/{id}", "document", target_operation="DELETE /documents/{id}"),
-        PolicyHypothesis("other-method", "actor.authenticated", "GET /documents/{id}", "document", target_operation="GET /documents/{id}"),
-        PolicyHypothesis("other-resource", "actor.authenticated", "DELETE /folders/{id}", "folder", target_operation="DELETE /folders/{id}"),
-    ]
-
-    assert [item.id for item in relevant_hypotheses(hypotheses, baseline)] == ["matching"]
+    adapter = CallbackTargetAdapter(
+        context_resolver=lambda _: CounterfactualContext(owner_id="owner", alternate_actor="other"),
+        executor=execute,
+        snapshotter=lambda: dict(state),
+        protected_field_resolver=lambda _: {"status"},
+        resetter=lambda: resets.append("reset"),
+    )
+    hypothesis = PolicyHypothesis(
+        "owner", "", "POST /claims/{claimId}/settle", "claim", family="ownership",
+        target_operation="POST /claims/{claimId}/settle", applicable_operators={"actor_swap"},
+    )
+    results = run_with_adapter([hypothesis], [Probe("settle", "owner", "POST", "/claims/12/settle")], adapter, 1)
+    assert resets == ["reset"]
+    assert results and results[0]["outcomes"]

@@ -51,6 +51,12 @@ class TraceStep:
     produces: set[str] = field(default_factory=set)
     consumes: set[str] = field(default_factory=set)
     session: str | None = None
+    # Remains stable when a transformation changes Probe.id for traceability.
+    origin_step_id: str | None = None
+
+    @property
+    def stable_id(self) -> str:
+        return self.origin_step_id or self.probe.id.split(":", 1)[0]
 
 
 @dataclass
@@ -61,7 +67,7 @@ class ExecutionTrace:
 
     @classmethod
     def from_probe(cls, probe: Probe) -> "ExecutionTrace":
-        return cls(probe.id, [TraceStep(probe)])
+        return cls(probe.id, [TraceStep(probe, origin_step_id=probe.id)])
 
     @property
     def probes(self) -> list[Probe]:

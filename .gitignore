@@ -9,7 +9,9 @@ output/summary.json
 output/policy-toy-result.json
 
 # Local runtime credentials/configuration must never be committed.
-configs/juiceshop.local.json
+configs/*.local.json
+configs/*.local.yaml
+configs/*.local.yml
 output/juiceshop-benchmark-analysis.json
 output/juiceshop-benchmark-summary.csv
 output/juiceshop-benchmark-preflight.csv
@@ -19,4 +21,11 @@ output/juiceshop-full-proxy-run*.jsonl
 output/juiceshop-evomaster-run*/
 output/juiceshop-benchmark-run*.json
 output/juiceshop-benchmark-run*.csv
+output/evomaster/
+output/juiceshop-proxy.jsonl
+output/live-results.json
+output/llm-recipe-candidates.yaml
+output/resolved-openapi.json
+output/run-report.md
+output/runtime-config.json
 em.yaml

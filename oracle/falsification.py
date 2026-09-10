@@ -19,6 +19,7 @@ class OracleEvidence:
     protected_fields_disclosed: frozenset[str] = field(default_factory=frozenset)
     protected_state_changed: frozenset[str] = field(default_factory=frozenset)
     control_effect: EffectResult | None = None
+    control_provenance: str = "unavailable"
     treatment_effect: EffectResult | None = None
     repeat_validation: bool | None = None
 
@@ -54,28 +55,28 @@ class FalsificationOracle:
         changed = self._changed_dimensions(seed, candidate)
         preserved = self._preserved_dimensions(control_probe, treatment_probe)
         precondition = hypothesis.predict(context)
-        family_valid, reason, repeat_validation = self._family_valid(
-            hypothesis, seed, candidate, changed, preserved, context,
-        )
+        constraints_valid, reason = self._validate_constraints(hypothesis, changed, preserved, context)
+        repeat_validation = "occurrence_count" in changed if hypothesis.required_changed_dimensions == {"occurrence_count"} else None
         evidence = OracleEvidence(
             precondition_status=precondition,
             changed_dimensions=frozenset(changed),
             preserved_dimensions=frozenset(preserved),
-            preservation_valid=family_valid,
+            preservation_valid=constraints_valid,
             target_identity=treatment_probe.path,
             response_status=response_status,
             protected_fields_disclosed=frozenset({"response"}) if effect.classification == "EFFECTIVE_DISCLOSURE" else frozenset(),
             protected_state_changed=frozenset(effect.changed_fields),
             control_effect=control_effect,
+            control_provenance="fresh" if control_effect is not None and context.get("control_is_fresh") else "historical" if control_effect is not None else "unavailable",
             treatment_effect=effect,
             repeat_validation=repeat_validation,
         )
         witness = ContrastiveWitness(hypothesis.id, seed, candidate, tuple(candidate.id.split(":")[1:]),
                                      frozenset(changed), frozenset(preserved), evidence,
-                                     "SECURITY_RELEVANT_WITNESS" if family_valid and effect.protected_effect else "INCONCLUSIVE")
+                                     "SECURITY_RELEVANT_WITNESS" if constraints_valid and effect.protected_effect else "INCONCLUSIVE")
         if precondition != "DENY":
             return FalsificationVerdict(False, hypothesis.confidence, "treatment did not violate hypothesis precondition", witness, "INCONCLUSIVE")
-        if not family_valid:
+        if not constraints_valid:
             return FalsificationVerdict(False, hypothesis.confidence, reason, witness, "INCONCLUSIVE")
         if not effect.protected_effect:
             return FalsificationVerdict(False, hypothesis.confidence, effect.reason, witness, "NOT_FALSIFIED_WITHIN_BUDGET")
@@ -93,7 +94,7 @@ class FalsificationOracle:
             changed.add("request_shape")
         if len(seed.steps) != len(candidate.steps):
             changed.add("occurrence_count" if len(candidate.steps) > len(seed.steps) else "sequence")
-        if [step.probe.id for step in seed.steps] != [step.probe.id for step in candidate.steps[:len(seed.steps)]]:
+        if [step.stable_id for step in seed.steps] != [step.stable_id for step in candidate.steps[:len(seed.steps)]]:
             changed.add("order")
         return changed
 
@@ -109,20 +110,24 @@ class FalsificationOracle:
         return preserved
 
     @staticmethod
-    def _family_valid(hypothesis, seed, candidate, changed, preserved, context):
-        actor = context.get("actor", {})
-        resource = context.get("resource", {})
-        if hypothesis.family == "ownership":
-            valid = "actor" in changed and "resource" in preserved and actor.get("id") != resource.get("owner_id")
-            return valid, "ownership relation was not changed as required" if not valid else "foreign actor produced protected effect", None
-        if hypothesis.family == "authorization":
-            valid = "actor" in changed and "operation" in preserved
-            return valid, "authorization context or operation was not changed as required" if not valid else "unprivileged actor produced protected effect", None
-        if hypothesis.family == "state-transition":
-            valid = bool(changed & {"sequence", "order"}) and "operation" in preserved
-            return valid, "state prerequisite/order was not changed as required" if not valid else "invalid workflow produced protected effect", None
-        if hypothesis.family == "replay":
-            valid = "occurrence_count" in changed and len(candidate.steps) >= len(seed.steps) + 1
-            return valid, "replay was not a second equivalent action" if not valid else "repeated action produced protected effect", valid
-        valid = bool(changed & hypothesis.relevant_dimensions) and "operation" in preserved
-        return valid, "treatment is not hypothesis-relevant" if not valid else "relevant treatment produced protected effect", None
+    def _context_value(context: dict[str, Any], path: str) -> Any:
+        scope, _, field = path.partition(".")
+        return context.get(scope, {}).get(field) if field else context.get(scope)
+
+    @classmethod
+    def _validate_constraints(cls, hypothesis, changed, preserved, context):
+        missing_changes = hypothesis.required_changed_dimensions - changed
+        if missing_changes:
+            return False, f"missing required changed dimensions: {', '.join(sorted(missing_changes))}"
+        if hypothesis.required_any_changed_dimensions and not (hypothesis.required_any_changed_dimensions & changed):
+            return False, "none of the alternative required dimensions changed"
+        missing_preserved = hypothesis.required_preserved_dimensions - preserved
+        if missing_preserved:
+            return False, f"missing required preserved dimensions: {', '.join(sorted(missing_preserved))}"
+        for path, expected in hypothesis.required_context_values.items():
+            if cls._context_value(context, path) != expected:
+                return False, f"required context value not met: {path}"
+        for left, right in hypothesis.required_distinct_context_fields:
+            if cls._context_value(context, left) == cls._context_value(context, right):
+                return False, f"required distinct relation not met: {left} != {right}"
+        return True, "hypothesis constraints preserved while protected effect occurred"

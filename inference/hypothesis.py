@@ -29,6 +29,39 @@ class PolicyHypothesis:
     applicable_operators: set[str] = field(default_factory=set)
     supporting_trace_ids: list[str] = field(default_factory=list)
     falsification_condition: str | None = None
+    required_changed_dimensions: set[str] = field(default_factory=set)
+    required_any_changed_dimensions: set[str] = field(default_factory=set)
+    required_preserved_dimensions: set[str] = field(default_factory=set)
+    required_context_values: dict[str, object] = field(default_factory=dict)
+    required_distinct_context_fields: list[tuple[str, str]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Family defaults are declared once on the hypothesis, not in the oracle."""
+        defaults = {
+            "ownership": ({"actor"}, {"operation", "resource"}, {}, [("actor.id", "resource.owner_id")]),
+            "authorization": ({"actor"}, {"operation"}, {"actor.authenticated": False}, []),
+            "state-transition": (set(), {"operation"}, {}, []),
+            "replay": ({"occurrence_count"}, {"operation", "request_shape"}, {}, []),
+        }
+        changed, preserved, values, distinct = defaults.get(self.family, (set(), {"operation"}, {}, []))
+        if not self.required_changed_dimensions:
+            self.required_changed_dimensions = set(changed)
+        if self.family == "state-transition" and not self.required_any_changed_dimensions:
+            self.required_any_changed_dimensions = {"sequence", "order"}
+        if not self.required_preserved_dimensions:
+            self.required_preserved_dimensions = set(preserved)
+        if not self.required_context_values:
+            self.required_context_values = dict(values)
+        if not self.required_distinct_context_fields:
+            self.required_distinct_context_fields = list(distinct)
+        if not self.applicable_operators:
+            compatibility_operators = {
+                "ownership": {"actor_swap"},
+                "authorization": {"actor_swap"},
+                "state-transition": {"repeat"},
+                "replay": {"repeat"},
+            }
+            self.applicable_operators = set(compatibility_operators.get(self.family, ()))
 
     def predict(self, context: dict) -> str:
         """A hypothesis predicts allow only when all known predicates hold."""

@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from core.models import ExecutionTrace, TraceStep
+from core.models import ExecutionTrace
 from .base import TransformationOperator
 
 
@@ -13,5 +13,5 @@ class Repeat(TransformationOperator):
 
     def apply(self, trace: ExecutionTrace, context: object) -> ExecutionTrace:
         target = trace.steps[-1]
-        repeated = TraceStep(replace(target.probe, id=f"{target.probe.id}:repeat"), target.observation, dict(target.bindings))
+        repeated = replace(target, probe=replace(target.probe, id=f"{target.probe.id}:repeat"))
         return ExecutionTrace(f"{trace.id}:repeat", [*trace.steps, repeated])

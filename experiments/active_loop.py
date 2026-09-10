@@ -30,7 +30,7 @@ class ActivePolicyEngine:
 
     def run(self, baseline: Probe | ExecutionTrace | list[ExecutionTrace], context: CounterfactualContext, budget: int,
             execute: Callable[[Probe], Observation], snapshot: Callable[[], dict], resource_type: str = "resource",
-            protected_fields: set[str] | None = None) -> list[ExperimentOutcome]:
+            protected_fields: set[str] | None = None, reset: Callable[[], None] | None = None) -> list[ExperimentOutcome]:
         seeds = list(baseline) if isinstance(baseline, list) else [baseline if isinstance(baseline, ExecutionTrace) else ExecutionTrace.from_probe(baseline)]
         if context.state_setup_probes:
             seeds = [ExecutionTrace(seed.id, [*(TraceStep(probe) for probe in context.state_setup_probes), *seed.steps]) for seed in seeds]
@@ -45,19 +45,30 @@ class ActivePolicyEngine:
                     break
 
                 def evaluate(node) -> bool:
-                    plan = compile_trace(node.trace, hypothesis)
-                    for step in plan.setup_steps:
-                        if step.probe is not None:
-                            execute(step.probe)
-                    before = snapshot()
-                    if plan.intervention_step is None or plan.intervention_step.probe is None:
-                        raise RuntimeError("compiled trace has no executable target")
-                    observed = execute(plan.intervention_step.probe)
-                    after = snapshot()
-                    if observed.features.get("protected_disclosure"):
-                        effect = EffectResult("EFFECTIVE_DISCLOSURE", True, "target adapter observed protected resource data")
-                    else:
-                        effect = classify_effect(before, observed, after, hypothesis.protected_fields or protected_fields)
+                    def execute_trace(trace: ExecutionTrace):
+                        plan = compile_trace(trace, hypothesis)
+                        for step in plan.setup_steps:
+                            if step.probe is not None:
+                                execute(step.probe)
+                        before = snapshot()
+                        if plan.intervention_step is None or plan.intervention_step.probe is None:
+                            raise RuntimeError("compiled trace has no executable target")
+                        observation = execute(plan.intervention_step.probe)
+                        after = snapshot()
+                        if observation.features.get("protected_disclosure"):
+                            trace_effect = EffectResult("EFFECTIVE_DISCLOSURE", True, "target adapter observed protected resource data")
+                        else:
+                            trace_effect = classify_effect(before, observation, after, hypothesis.protected_fields or protected_fields)
+                        return observation, before, after, trace_effect
+
+                    control_effect = None
+                    fresh_control = False
+                    if reset is not None:
+                        reset()
+                        _, _, _, control_effect = execute_trace(node.seed_trace)
+                        reset()
+                        fresh_control = True
+                    observed, before, after, effect = execute_trace(node.trace)
                     actual_context = {
                         "actor": {"id": observed.actor, "authenticated": observed.actor != context.anonymous_actor},
                         "resource": {"owner_id": context.owner_id}, "state": dict(before), "history": {},
@@ -72,12 +83,12 @@ class ActivePolicyEngine:
                     self.evidence.add(evidence)
                     update_from_evidence(self.hypotheses, self.evidence.all())
                     control_observation = node.seed_trace.steps[-1].observation
-                    control_effect = None
-                    if control_observation is not None:
+                    if control_effect is None and control_observation is not None:
                         control_effect = classify_effect(
                             control_observation.state_before, control_observation,
                             control_observation.state_after, hypothesis.protected_fields or protected_fields,
                         )
+                    actual_context["control_is_fresh"] = fresh_control
                     verdict = self.oracle.evaluate(
                         hypothesis, node.seed_trace, node.trace, effect, actual_context,
                         control_effect, observed.status_code,

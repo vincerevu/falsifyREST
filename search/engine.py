@@ -31,21 +31,22 @@ class CounterexampleSearchEngine:
         frontier.push(root, priority(root, hypothesis))
         while frontier and len(result.evaluated) < budget:
             node = frontier.pop()
+            if node.depth:
+                result.evaluated.append(node)
+                if evaluate(node):
+                    result.counterexample = node
+                    result.pruned = dict(pruner.reasons)
+                    return result
             if node.depth >= self.max_depth:
                 continue
             for operator in self.operators:
-                if len(result.evaluated) >= budget or not hypothesis.is_applicable_operator(operator):
+                if not hypothesis.is_applicable_operator(operator):
                     continue
                 if not operator.applicable(hypothesis, node.trace, context):
                     continue
                 child = SearchNode.child(node, operator.apply(node.trace, context), operator)
                 if pruner.reject(child, hypothesis, context):
                     continue
-                result.evaluated.append(child)
-                if evaluate(child):
-                    result.counterexample = child
-                    result.pruned = dict(pruner.reasons)
-                    return result
                 frontier.push(child, priority(child, hypothesis))
         result.pruned = dict(pruner.reasons)
         return result

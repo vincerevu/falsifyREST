@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "falsifyrest"
+version = "0.1.0"
+description = "Stateful REST security hypothesis falsification"
+requires-python = ">=3.10"
+dependencies = ["typer>=0.12", "rich>=13", "questionary>=2", "PyYAML>=6"]
+
+[project.scripts]
+falsifyrest = "cli.app:app"
+
+[tool.setuptools.packages.find]
+include = ["adapters*", "actors*", "cli*", "core*", "evidence*", "execution*", "experiments*", "inference*", "oracle*", "planner*", "resources*", "schema*", "search*", "semantic*", "state*", "violation*"]

@@ -14,6 +14,40 @@ This distinction is intentional: the core is reusable across REST APIs, while ze
 
 ## Run
 
+### Interactive CLI
+
+Install the project with its CLI dependencies, then launch the configuration wizard:
+
+```powershell
+pip install -e .
+falsifyrest
+```
+
+The wizard only collects a `RunConfig`; generic analysis/execution remains in the shared runner and target adapters own authentication, setup, snapshots, and reset behavior. Profiles are saved under `~/.falsifyrest/profiles`.
+
+The same configuration can be used non-interactively for benchmarks or CI:
+
+```powershell
+falsifyrest run --config juiceshop.yaml --no-interactive
+falsifyrest run --no-interactive --target http://localhost:3000 --openapi .\openapi.json --mode rule-only --budget 50
+```
+
+For existing captured traces, add `--trace .\trace.jsonl`; this invokes the generic trace → evidence → hypothesis analysis without assuming a target-specific live-execution adapter.
+
+For Juice Shop, start from [juiceshop.example.yaml](configs/juiceshop.example.yaml). Set the two password environment variables instead of storing passwords in the profile. The `JuiceShopAdapter` creates missing benchmark users when permitted, logs each actor in once, caches its JWT privately, and attaches the appropriate token during request execution.
+
+With Juice Shop running, the supplied profile starts a local capture proxy, performs one authenticated EvoMaster pass per configured actor, then imports that trace for inference and live validation:
+
+When `recipe_synthesis.enabled` is true, active seeds are generated in batches from OpenAPI operations and successful trace shapes. Each proposed recipe is structurally checked against OpenAPI, executed against the target, and repaired with the configured LLM when provisioning fails. The local Juice Shop profile intentionally contains no fixed basket recipes; YAML resources remain an optional override/fallback.
+
+```powershell
+$env:FALSIFYREST_JUICESHOP_OWNER_PASSWORD = "..."
+$env:FALSIFYREST_JUICESHOP_ATTACKER_PASSWORD = "..."
+falsifyrest run --config .\configs\juiceshop.local.yaml --no-interactive --live
+```
+
+Live results are written to `output/live-results.json`. The overall budget is divided across selected captured seeds; the adapter never prints JWTs.
+
 ```powershell
 cd D:\Research\falsifyREST
 python -m experiments.runner --runs 100 --budget 5 --seed 7
